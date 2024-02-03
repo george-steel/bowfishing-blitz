@@ -1,8 +1,7 @@
 use crate::gputil::*;
 use glam::f32::*;
-use glam::u32::{UVec2, uvec2};
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{BindGroupEntry, BufferUsages, LoadOp};
+use wgpu::{BindGroupEntry, BufferUsages};
 use std::{default::Default, slice, time::Instant};
 
 
@@ -11,11 +10,9 @@ use std::{default::Default, slice, time::Instant};
 struct TerrainParams {
     pub transform: Mat4,
     pub inv_transform: Mat4,
-    pub grid_size: UVec2,
-    pub terrain_size: Vec2,
-    pub xy_scale: f32,
-    pub z_scale: f32,
-    pub pad: u64,
+    pub uv_center: Vec2,
+    pub uv_radius: f32,
+    pub grid_size: u32,
 }
 
 pub struct TerrainView {
@@ -47,6 +44,7 @@ impl TerrainView {
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
+                cull_mode: Some(wgpu::Face::Back),
                 ..wgpu::PrimitiveState::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState{
@@ -60,15 +58,13 @@ impl TerrainView {
             multiview: None,
         });
 
-        let transform = Mat4::from_translation(vec3(-5.0, -5.0, 0.0));
+        let transform = Mat4::from_translation(vec3(0.0, 0.0, 0.0));
         let params = TerrainParams{
             transform,
             inv_transform: transform.inverse(),
-            grid_size: uvec2(100, 100),
-            terrain_size: vec2(10.0, 10.0),
-            xy_scale: 1.0,
-            z_scale: 1.0,
-            pad: 0,
+            uv_center: Vec2::ZERO,
+            uv_radius: 6.0,
+            grid_size: 100,
         };
 
         let camera = Mat4::look_at_rh(vec3(0.0, -10.0, 4.0), Vec3::ZERO, Vec3::Z);
@@ -159,6 +155,6 @@ impl TerrainView {
         
         rpass.set_pipeline(&self.pipeline);
         rpass.set_bind_group(0, &self.bind_group, &[]);
-        rpass.draw(0..(2 * self.params.grid_size.x + 2), 0..(self.params.grid_size.y));
+        rpass.draw(0..(2 * self.params.grid_size + 2), 0..(self.params.grid_size));
     }
 }

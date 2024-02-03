@@ -19,7 +19,9 @@ fn smoother_step(x: f32) -> f32 {
     return t*t*t*(t*(t*6.0 - 15.0) + 10.0);
 }
 
-fn perlin_noise_deriv(xy: vec2f, xform: mat2x2f, seed: i32) -> vec3f {
+alias gradval = vec3f; // gradient is x and y, value is z
+
+fn perlin_noise_deriv(xy: vec2f, xform: mat2x2f, seed: i32) -> gradval {
     let uv = xform * xy;
     let cell = vec2i(floor(uv));
     let f = fract(uv);
@@ -49,12 +51,7 @@ const oct = mat2x2f(
     vec2f(-0.978, 2.159),
 );
 
-const large = mat2x2f(
-    vec2f(0.3, 0.1),
-    vec2f(-0.1, 0.3),
-);
-
-fn fbm_deriv(uv: vec2f, init_transform: mat2x2f, octaves: u32, lancuarity: mat2x2f, gain: f32, init_seed: i32) -> vec3f {
+fn fbm_deriv(uv: vec2f, init_transform: mat2x2f, octaves: u32, lancuarity: mat2x2f, gain: f32, init_seed: i32) -> gradval {
     var out = vec3f(0);
     var transform = init_transform;
     var amp = 1.0;
@@ -69,8 +66,28 @@ fn fbm_deriv(uv: vec2f, init_transform: mat2x2f, octaves: u32, lancuarity: mat2x
     return out;
 }
 
+fn mult_gradval(a: gradval, b: gradval) -> gradval {
+    return vec3f(a.xy * b.z + b.xy * a.z, a.z * b.z);
+}
+
+fn abs_gradval(a: gradval) -> gradval {
+    return a * sign(a.z);
+}
+
+fn const_gradval(a: f32) -> gradval {
+    return vec3f(0.0, 0.0, a);
+}
+
+
+
+const ls1mat = mat2x2f(0.2, 0.1, -0.1, 0.2);
+const ls2mat = mat2x2f(0.5, -0.5, 0.5, 0.5);
 fn terrain(uv: vec2f) -> vec3f {
-    return 2 * perlin_noise_deriv(uv, large, 0) + 0.6 * fbm_deriv(uv, id2, 6u, oct, 0.3, 1);
+    let ls1 = 1.5 * perlin_noise_deriv(uv, ls1mat, 0) + const_gradval(0.3);
+    let ls2 = perlin_noise_deriv(uv, ls2mat, 1);
+    let ls = ls1 + 0.3 * mult_gradval(ls1 + const_gradval(1.0), ls2);
+    let fs = fbm_deriv(uv, id2, 6u, oct, 0.35, 1);
+    return ls + mult_gradval(fs, const_gradval(0.2) + 0.5 * abs_gradval(ls));
 }
 
 struct ClipQuadOut {
@@ -96,22 +113,15 @@ struct ClipQuadOut {
     let p = vs.uv * 10;
     let n = terrain(p);
     let ramped = textureSampleLevel(ramp, ramp_sampler, 0.5 * (n.z + 1), 0.0);
-    //let locald = ((vs.pos.xy % 20) - 10) * vec2f(1, -1);
-    //if dot(locald, n.xy) > 0 {
-    //    return vec4f(n.zz + 0.5, 0, ramped.w);
-    //} else {
-    //    return vec4f(0, n.zz + 0.5, ramped.w);
-    //}
     return ramped;
 }
 
 struct TerrainParams {
     transform: mat4x4f,
     inv_transform: mat4x4f,
-    grid_size: vec2u,
-    terrain_size: vec2f,
-    xy_scale: f32,
-    z_scale: f32,
+    uv_center: vec2f,
+    uv_radius: f32,
+    grid_size: u32,
 }
 
 struct TerrainVertexOut {
@@ -125,11 +135,11 @@ struct TerrainVertexOut {
 @group(0) @binding(1) var<uniform> camera: mat4x4f;
 
 @vertex fn terrain_mesh(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> TerrainVertexOut {
-    let ij = vec2i(vec2u(vert_idx / 2, inst_idx + (vert_idx % 2)));
-    let uv = vec2f(ij) / vec2f(tparams.grid_size) * vec2f(tparams.terrain_size);
+    let ij = vec2i(vec2u(inst_idx + (vert_idx % 2), vert_idx / 2));
+    let uv = (2.0 * vec2f(ij) / f32(tparams.grid_size) - 1.0) * tparams.uv_radius;
     let zd = terrain(uv);
-    let local_pos = vec4f(uv * tparams.xy_scale, zd.z * tparams.z_scale, 1);
-    let local_norm = normalize(vec3f(zd.xy * tparams.z_scale, tparams.xy_scale));
+    let local_pos = vec4f(uv, zd.z, 1);
+    let local_norm = normalize(vec3f(zd.xy, 1));
     let world_pos = tparams.transform * local_pos;
     let world_norm = (vec4f(local_norm, 0) * tparams.inv_transform).xyz;
     var out: TerrainVertexOut;
@@ -145,11 +155,27 @@ const light = vec3(5.0/13.0, 0.0, 12.0/13.0);
 @fragment fn terrain_frag(v: TerrainVertexOut) -> @location(0) vec4f {
     let uv = v.terrain_coord;
     let zd = terrain(uv);
-    let local_norm = normalize(vec3f(zd.xy * tparams.z_scale, tparams.xy_scale));
+    let local_norm = normalize(vec3f(zd.xy, 1));
     let norm = normalize((vec4f(local_norm, 0) * tparams.inv_transform).xyz);
 
+    let z = zd.z;
+    var col: vec3f;
+    if z >= 0 {
+        col = vec3f(saturate(0.5 + 0.5 * z), 0.9, saturate(0.3 + 0.3 * z));
+    } else {
+        let rg = 0.5 - 0.3 * z;
+        col = vec3f(rg, rg, 0.9);
+    }
+    // contour lines
+    let hspan = length(vec2f(dpdx(z), dpdy(z)));
+    let cdist = 0.1 * abs(10 * z - round(10 * z)) / hspan; // in pixels
+    let line_fac = smoothstep(0.5, 1.0, cdist);
+    let lcol = vec3f(0.1, 0.5, 0.5);
+
+    let albedo = mix(lcol, col, line_fac);
+    
     //let norm = normalize(v.world_normal);
     let light = 0.02 + 0.9 * max(0.0, dot(light, norm));
-    return vec4f(light, light, light, 1);
+    return vec4f(albedo * light, 1);
 }
 
