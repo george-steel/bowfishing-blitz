@@ -26,6 +26,13 @@ pub struct TerrainView {
     init_time: Instant
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Camera {
+    pub eye: Vec4,
+    pub matrix: Mat4,
+}
+
 impl TerrainView {
     pub fn new(ctx: &GPUContext, now: Instant) -> Self {
         let shader = ctx.device.create_shader_module(wgpu::include_wgsl!("noise.wgsl"));
@@ -67,7 +74,10 @@ impl TerrainView {
             grid_size: 100,
         };
 
-        let camera = Mat4::look_at_rh(vec3(0.0, -10.0, 4.0), Vec3::ZERO, Vec3::Z);
+        let camera = Camera {
+            matrix: Mat4::look_at_rh(vec3(0.0, -10.0, 4.0), Vec3::ZERO, Vec3::Z),
+            eye: vec4(0.0, -10.0, 4.0, 1.0),
+        };
 
         let params_buf = ctx.device.create_buffer_init(&BufferInitDescriptor{
             label: Some("params_buf"),
@@ -119,10 +129,11 @@ impl TerrainView {
         let size = out.size();
         let aspect = size.width as f32 / size.height as f32;
 
-        let camera_angle = 0.5 * now.duration_since(self.init_time).as_secs_f32();
+        let camera_angle = 0.3 * now.duration_since(self.init_time).as_secs_f32();
         let camera_loc = Mat4::from_rotation_z(camera_angle).transform_point3(vec3(0.0, -10.0, 4.0));
-        let camera = Mat4::perspective_rh(0.5, aspect, 0.5, 100.0)
+        let camera_mat = Mat4::perspective_rh(0.5, aspect, 0.5, 100.0)
                 * Mat4::look_at_rh(camera_loc, Vec3::ZERO, Vec3::Z);
+        let camera = Camera {matrix: camera_mat, eye: Vec4::from((camera_loc, 1.0))};
         ctx.queue.write_buffer(&self.camera_buf, 0, bytemuck::cast_slice(slice::from_ref(&camera)));
 
         if size != self.last_size || self.depth_tex.is_none() {
