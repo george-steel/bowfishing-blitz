@@ -78,11 +78,11 @@ const ls1mat = mat2x2f(0.2, 0.1, -0.1, 0.2);
 const ls2mat = mat2x2f(0.5, -0.5, 0.5, 0.5);
 const oct = mat2x2f(2.159, 0.978, -0.978, 2.159);
 fn terrain(uv: vec2f) -> vec3f {
-    let ls1 = 1.5 * perlin_noise_deriv(uv, ls1mat, 0) + const_gradval(0.3);
+    let ls1 = 1.5 * perlin_noise_deriv(uv, ls1mat, 0) + const_gradval(0.2);
     let ls2 = perlin_noise_deriv(uv, ls2mat, 1);
     let ls = ls1 + 0.3 * mult_gradval(ls1 + const_gradval(1.0), ls2);
     let fs = fbm_deriv(uv, id2, 6u, oct, 0.35, 4);
-    return ls + mult_gradval(fs, const_gradval(0.2) + 0.5 * abs_gradval(ls));
+    return ls + mult_gradval(fs, const_gradval(0.2) + 0.5 * abs_gradval(ls));// - const_gradval(1.0);
 }
 
 struct ClipQuadOut {
@@ -113,8 +113,10 @@ struct ClipQuadOut {
 
 // perform refraction
 fn apparent_depth(dist: f32, eye_height: f32, depth: f32) -> f32 {
-    let oblique = dist / (0.75 * abs(depth) + eye_height);
-    let ratio = sqrt(0.77 * oblique * oblique + 1.77);
+    var oblique = dist / (0.75 * abs(depth) + eye_height);
+    var ratio = sqrt(0.77 * oblique * oblique + 1.77);
+    oblique = dist / (abs(depth) / ratio + eye_height);
+    ratio = sqrt(0.77 * oblique * oblique + 1.77);
     return depth / ratio;
 }
 
@@ -143,10 +145,10 @@ struct TerrainVertexOut {
 
 @vertex fn terrain_mesh(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> TerrainVertexOut {
     let ij = vec2i(vec2u(inst_idx + (vert_idx % 2), vert_idx / 2));
-    let uv = (2.0 * vec2f(ij) / f32(tparams.grid_size) - 1.0) * tparams.uv_radius;
+    let uv = (2.0 * vec2f(ij) / f32(tparams.grid_size) - 1.0) * tparams.uv_radius + tparams.uv_center;
     let zd = terrain(uv);
     let local_pos = vec4f(uv, zd.z, 1);
-    let local_norm = normalize(vec3f(zd.xy, 1));
+    let local_norm = normalize(vec3f(-zd.xy, 1));
     let world_pos = tparams.transform * local_pos;
     let world_norm = (vec4f(local_norm, 0) * tparams.inv_transform).xyz;
 
@@ -173,7 +175,7 @@ const uw_sun = vec3(0.29, 0.0, 0.96);
 @fragment fn terrain_frag(v: TerrainVertexOut) -> @location(0) vec4f {
     let uv = v.terrain_coord;
     let zd = terrain(uv);
-    let local_norm = normalize(vec3f(zd.xy, 1));
+    let local_norm = normalize(vec3f(-zd.xy, 1));
     let norm = normalize((vec4f(local_norm, 0) * tparams.inv_transform).xyz);
 
     let z = zd.z;
@@ -181,8 +183,7 @@ const uw_sun = vec3(0.29, 0.0, 0.96);
     if z >= 0 {
         col = vec3f(saturate(0.5 + 0.5 * z), 0.9, saturate(0.3 + 0.3 * z));
     } else {
-        let rg = 0.5 - 0.3 * z;
-        col = vec3f(rg, rg, 0.9);
+        col = vec3f(0.7, 0.7, 0.8);
     }
     // contour lines
     let hspan = length(vec2f(dpdx(z), dpdy(z)));
@@ -191,9 +192,42 @@ const uw_sun = vec3(0.29, 0.0, 0.96);
     let lcol = vec3f(0.1, 0.5, 0.5);
 
     let albedo = mix(lcol, col, line_fac);
+
+    var spec: f32 = 0.0;
+    if zd.z > 0 {
+        let view = normalize(camera.eye.xyz - v.world_pos);
+        let h = normalize(view + sun);
+        let crd = length(norm - h);
+        spec = 1.0 - smoothstep(0.02, 0.05, crd);
+    }
     
     //let norm = normalize(v.world_normal);
     let light = 0.02 + 0.9 * max(0.0, dot(select(sun, uw_sun, z < 0), norm));
-    return vec4f(albedo * light, 1);
+    return vec4f(vec3f(spec) + albedo * light, 1);
 }
 
+@vertex fn water_quad(@builtin(vertex_index) vert_idx: u32) -> TerrainVertexOut {
+    let ij = vec2u(vert_idx % 2, vert_idx / 2);
+    let uv = tparams.uv_center + tparams.uv_radius * (2.0 * vec2f(ij) - 1.0);
+    let local_pos = vec4f(uv, 0, 1);
+    let world_pos = tparams.transform * local_pos;
+    let world_norm = (vec4f(0, 0, 1, 0) * tparams.inv_transform).xyz;
+
+    var out: TerrainVertexOut;
+    out.clip_pos = camera.matrix * world_pos;
+    out.world_pos = world_pos.xyz;
+    out.terrain_coord = uv;
+    out.world_normal = world_norm;
+    return out;
+}
+
+@fragment fn water_frag(v: TerrainVertexOut) -> @location(0) vec4f {
+    let norm = normalize((vec4f(0,0,1,0) * tparams.inv_transform).xyz);
+
+    let to_eye = normalize(camera.eye.xyz - v.world_pos);
+    let refl = 0.02 + 0.98 * pow(1.0 - dot(norm, to_eye), 5.0);
+    let h = normalize(to_eye + sun);
+    let crd = length(norm - h);
+    let spec = 1.0-smoothstep(0.05, 0.15, crd);
+    return vec4f(spec, spec, spec, refl);
+}
