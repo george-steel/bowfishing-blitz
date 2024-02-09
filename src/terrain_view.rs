@@ -1,7 +1,8 @@
 use crate::gputil::*;
+use crate::camera::*;
 use glam::f32::*;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{BindGroupEntry, BlendComponent, BlendFactor, BlendOperation, BufferUsages, ShaderStages};
+use wgpu::{BindGroupEntry, BlendComponent, BufferUsages, ShaderStages};
 use std::{default::Default, slice, time::Instant};
 
 
@@ -24,18 +25,10 @@ pub struct TerrainView {
     bind_group: wgpu::BindGroup,
     last_size: wgpu::Extent3d,
     depth_tex: Option<wgpu::Texture>,
-    init_time: Instant
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct Camera {
-    pub eye: Vec4,
-    pub matrix: Mat4,
 }
 
 impl TerrainView {
-    pub fn new(ctx: &GPUContext, now: Instant) -> Self {
+    pub fn new(ctx: &GPUContext, camera: &CameraController) -> Self {
         let bg_layout = ctx.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor{
             label: Some("Terrain Uniforms"),
             entries: &[wgpu::BindGroupLayoutEntry{
@@ -138,11 +131,6 @@ impl TerrainView {
             grid_size: 200,
         };
 
-        let camera = Camera {
-            matrix: Mat4::look_at_rh(vec3(0.0, -10.0, 3.0), Vec3::ZERO, Vec3::Z),
-            eye: vec4(0.0, -10.0, 4.0, 1.0),
-        };
-
         let params_buf = ctx.device.create_buffer_init(&BufferInitDescriptor{
             label: Some("params_buf"),
             contents: bytemuck::cast_slice(slice::from_ref(&params)),
@@ -151,7 +139,7 @@ impl TerrainView {
         });
         let camera_buf = ctx.device.create_buffer_init(&BufferInitDescriptor{
             label: Some("camera_buf"),
-            contents: bytemuck::cast_slice(slice::from_ref(&camera)),
+            contents: bytemuck::cast_slice(slice::from_ref(&camera.camera(1.0))),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
@@ -169,7 +157,6 @@ impl TerrainView {
             params_buf, camera_buf, bind_group,
             last_size: wgpu::Extent3d{width: 0, height: 0, depth_or_array_layers: 0},
             depth_tex: None,
-            init_time: now,
         }
     }
 
@@ -189,16 +176,11 @@ impl TerrainView {
         self.depth_tex = Some(depth);
     }
 
-    pub fn render(&mut self, ctx: &GPUContext, encoder: &mut wgpu::CommandEncoder, out: &wgpu::Texture, now: Instant) {
+    pub fn render(&mut self, ctx: &GPUContext, encoder: &mut wgpu::CommandEncoder, out: &wgpu::Texture, camera: &CameraController) {
         let size = out.size();
         let aspect = size.width as f32 / size.height as f32;
 
-        let camera_angle = 0.3 * now.duration_since(self.init_time).as_secs_f32();
-        let camera_loc = Mat4::from_rotation_z(camera_angle).transform_point3(vec3(0.0, -10.0, 3.0));
-        let camera_mat = Mat4::perspective_rh(0.5, aspect, 0.5, 100.0)
-                * Mat4::look_at_rh(camera_loc, Vec3::ZERO, Vec3::Z);
-        let camera = Camera {matrix: camera_mat, eye: Vec4::from((camera_loc, 1.0))};
-        ctx.queue.write_buffer(&self.camera_buf, 0, bytemuck::cast_slice(slice::from_ref(&camera)));
+        ctx.queue.write_buffer(&self.camera_buf, 0, bytemuck::cast_slice(slice::from_ref(&camera.camera(aspect))));
 
         if size != self.last_size || self.depth_tex.is_none() {
             self.resize(ctx, size);

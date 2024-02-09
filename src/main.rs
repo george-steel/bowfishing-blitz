@@ -1,15 +1,17 @@
 mod gputil;
 mod fragtex;
 mod terrain_view;
+mod camera;
+use gputil::*;
+use camera::*;
 
 use std::time::Instant;
 
-use gputil::*;
-
+use glam::f32::*;
 use winit::{
-    event::{Event, WindowEvent},
-    event_loop::EventLoop,
+    event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent, MouseButton}, event_loop::EventLoop, keyboard::{Key, NamedKey}, window::CursorGrabMode
 };
+
 
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Info).init();
@@ -26,8 +28,10 @@ fn main() {
 
     let init_time = Instant::now();
     //let ft = fragtex::FragDisplay::new(&gctx);
-    let mut terrain = terrain_view::TerrainView::new(&gctx, init_time);
+    let mut camera = CameraController::new(CameraSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
+    let mut terrain = terrain_view::TerrainView::new(&gctx, &camera);
 
+    let mut grabbed = false;
     let window = &window;
     event_loop
         .run(move |event, target| {
@@ -36,18 +40,45 @@ fn main() {
             // the resources are properly cleaned up.
             let _ = &gctx;
 
-            if let Event::WindowEvent {
-                window_id: _,
-                event,
-            } = event
-            {
+            if let Event::DeviceEvent {device_id: _, event} = event.clone() {
+                match event {
+                    DeviceEvent::Key(key_event) => {
+                        if window.has_focus() {
+                            camera.key(key_event.physical_key, key_event.state);
+                        }
+                    }
+                    DeviceEvent::MouseMotion { delta: (dx, dy) } => {
+                        if window.has_focus() && grabbed {
+                            camera.mouse(dx, dy);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let Event::WindowEvent {window_id: _, event,} = event {
                 match event {
                     WindowEvent::Resized(new_size) => {
                         gctx.configure_surface_target(&surface, new_size);
                         window.request_redraw();
                     }
+                    WindowEvent::Focused(false) |
+                    WindowEvent::KeyboardInput { device_id: _, event: KeyEvent {
+                        physical_key: _, logical_key: Key::Named(NamedKey::Escape), text: _, location: _, state: _, repeat: _, ..
+                    }, is_synthetic: _ }=> {
+                        window.set_cursor_grab(CursorGrabMode::None);
+                        window.set_cursor_visible(true);
+                        grabbed = false;
+                    }
+                    WindowEvent::MouseInput {device_id: _, state: ElementState::Pressed, button: MouseButton::Left } => {
+                        if window.has_focus() {
+                            window.set_cursor_grab(CursorGrabMode::Confined);
+                            window.set_cursor_visible(false);
+                            grabbed = true;
+                        }
+                    }
                     WindowEvent::RedrawRequested => {
                         let now = Instant::now();
+                        camera.tick(now);
                         match surface.get_current_texture() {
                             Err(e) => {
                                 log::error!("get_current_tecture: {}", e);
@@ -60,7 +91,7 @@ fn main() {
                                 });
                             
                                 //ft.render(&gctx, &mut encoder, &frame.texture);
-                                terrain.render(&gctx, &mut encoder, &frame.texture, now);
+                                terrain.render(&gctx, &mut encoder, &frame.texture, &camera);
 
                                 gctx.queue.submit(Some(encoder.finish()));
                                 frame.present();

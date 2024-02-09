@@ -129,8 +129,9 @@ struct TerrainParams {
 }
 
 struct Camera {
-    eye: vec4f,
     matrix: mat4x4f,
+    eye: vec3f,
+    time: f32,
 }
 
 struct TerrainVertexOut {
