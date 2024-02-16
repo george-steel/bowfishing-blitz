@@ -53,3 +53,13 @@ impl GPUContext {
         surface.configure(&self.device, &surface_config);
     }
 }
+
+pub fn reverse_z() -> Option<wgpu::DepthStencilState> {
+    Some(wgpu::DepthStencilState{
+        format: wgpu::TextureFormat::Depth32Float,
+        depth_write_enabled: true,
+        depth_compare: wgpu::CompareFunction::Greater,
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    })
+}

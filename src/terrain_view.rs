@@ -75,13 +75,7 @@ impl TerrainView {
                 cull_mode: Some(wgpu::Face::Back),
                 ..wgpu::PrimitiveState::default()
             },
-            depth_stencil: Some(wgpu::DepthStencilState{
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+            depth_stencil: reverse_z(),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
@@ -111,13 +105,7 @@ impl TerrainView {
                 cull_mode: Some(wgpu::Face::Back),
                 ..wgpu::PrimitiveState::default()
             },
-            depth_stencil: Some(wgpu::DepthStencilState{
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+            depth_stencil: reverse_z(),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
@@ -201,7 +189,7 @@ impl TerrainView {
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment{
                 view: &depth_view,
                 depth_ops: Some(wgpu::Operations{
-                    load: wgpu::LoadOp::Clear(1.0),
+                    load: wgpu::LoadOp::Clear(0.0),
                     store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,

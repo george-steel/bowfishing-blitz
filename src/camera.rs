@@ -17,7 +17,6 @@ pub struct CameraSettings {
     pub rot_speed: f32, // deg/count
     pub fov_y: f32, // deg
     pub clip_near: f32,
-    pub clip_far: f32,
 }
 
 impl Default for CameraSettings {
@@ -27,7 +26,6 @@ impl Default for CameraSettings {
             rot_speed: 0.05,
             fov_y: 45.0,
             clip_near: 0.1,
-            clip_far: 100.0,
         }
     }
 }
@@ -131,7 +129,7 @@ impl CameraController {
         Vec3::new(pitch_rad.cos() * yaw_rad.cos(), pitch_rad.cos() * yaw_rad.sin(), pitch_rad.sin())
     }
     pub fn camera(&self, aspect_ratio: f32) -> Camera {
-        let mat = Mat4::perspective_rh(self.settings.fov_y.to_radians(), aspect_ratio, self.settings.clip_near, self.settings.clip_far)
+        let mat = Mat4::perspective_infinite_reverse_rh(self.settings.fov_y.to_radians(), aspect_ratio, self.settings.clip_near,)
             * Mat4::look_to_rh(self.eye, self.look_dir(), Vec3::new(0.0, 0.0, 1.0));
         Camera {
             matrix: mat,
