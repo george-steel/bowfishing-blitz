@@ -85,32 +85,6 @@ fn terrain(uv: vec2f) -> vec3f {
     return ls + mult_gradval(fs, const_gradval(0.2) + 0.5 * abs_gradval(ls));// - const_gradval(1.0);
 }
 
-struct ClipQuadOut {
-    @builtin(position) pos: vec4f,
-    @location(0) uv: vec2f,
-}
-
-
-@vertex fn fullscreen_quad(@builtin(vertex_index) idx: u32) -> ClipQuadOut {
-    let u = f32(idx % 2);
-    let v = f32((idx / 2) % 2);
-    let xy = vec2f(2*u -1, 2*v-1);
-    var out: ClipQuadOut;
-    out.pos = vec4f(xy, 0, 1);
-    out.uv = vec2f(u, v);
-    return out;
-}
-
-@group(0) @binding(0) var ramp: texture_1d<f32>;
-@group(0) @binding(1) var ramp_sampler: sampler;
-
-@fragment fn my_image(vs: ClipQuadOut) -> @location(0) vec4f {
-    let p = vs.uv * 10;
-    let n = terrain(p);
-    let ramped = textureSampleLevel(ramp, ramp_sampler, 0.5 * (n.z + 1), 0.0);
-    return ramped;
-}
-
 // perform refraction
 fn apparent_depth(dist: f32, eye_height: f32, depth: f32) -> f32 {
     var oblique = dist / (0.75 * abs(depth) + eye_height);
@@ -130,7 +104,9 @@ struct TerrainParams {
 
 struct Camera {
     matrix: mat4x4f,
+    inv_matrix: mat4x4f,
     eye: vec3f,
+    clip_near: f32,
     time: f32,
 }
 
@@ -141,8 +117,8 @@ struct TerrainVertexOut {
     @location(2) world_normal: vec3f,
 }
 
-@group(0) @binding(0) var<uniform> tparams: TerrainParams;
-@group(0) @binding(1) var<uniform> camera: Camera;
+@group(0) @binding(0) var<uniform> camera: Camera;
+@group(0) @binding(1) var<uniform> tparams: TerrainParams;
 
 @vertex fn terrain_mesh(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> TerrainVertexOut {
     let ij = vec2i(vec2u(inst_idx + (vert_idx % 2), vert_idx / 2));
@@ -170,8 +146,8 @@ struct TerrainVertexOut {
     return out;
 }
 
-const sun = vec3(5.0/13.0, 0.0, 12.0/13.0);
-const uw_sun = vec3(0.29, 0.0, 0.96);
+const sun = vec3(0.548, -0.380, 0.745);
+const uw_sun = vec3(0.412, -0.285, 0.865);
 
 @fragment fn terrain_frag(v: TerrainVertexOut) -> @location(0) vec4f {
     let uv = v.terrain_coord;
@@ -232,3 +208,31 @@ const uw_sun = vec3(0.29, 0.0, 0.96);
     let spec = 1.0-smoothstep(0.05, 0.15, crd);
     return vec4f(spec, spec, spec, refl);
 }
+
+struct SkyQuadOut {
+    @builtin(position) pos: vec4f,
+    @location(0) clip_xy: vec2f,
+}
+
+@group(0) @binding(1) var sky_tex: texture_2d<f32>;
+@group(0) @binding(2) var sky_sampler: sampler;
+const pi = 3.1415926535;
+
+@vertex fn sky_vert(@builtin(vertex_index) idx: u32) -> SkyQuadOut {
+    let u = f32(idx % 2);
+    let v = f32((idx / 2) % 2);
+    let xy = vec2f(2*u -1, 2*v-1);
+    var out: SkyQuadOut;
+    out.pos = vec4f(xy, 0.0001, 1);
+    out.clip_xy = xy;
+    return out;
+}
+
+@fragment fn sky_frag(vsout: SkyQuadOut) -> @location(0) vec4f {
+    let look = normalize((camera.inv_matrix * vec4f(vsout.clip_xy * camera.clip_near, camera.clip_near, camera.clip_near)).xyz - camera.eye);
+    let v = 0.5 - atan2(look.z, length(look.xy)) / pi;
+    let u = 0.5 - atan2(look.y, look.x) / (2*pi);
+    let c = textureSample(sky_tex, sky_sampler, vec2f(u, v));
+    return c;
+}
+

@@ -9,11 +9,12 @@ edition = "2021"
 bytemuck = {version="1.14.1", features=["derive"]}
 env_logger = "0.11.1"
 glam = {version="0.25.0", features=["bytemuck"] }
-image = {version = "0.24.8", default_features=false, features=["png"] }
+image = {version = "0.24.8", default_features=false, features=["png", "hdr"] }
 log = "0.4.20"
 pollster = "0.3.0"
 wgpu = "0.19.1"
 winit = "0.29.10"
+rgbe = {path = "../rgbe/"}
 
 [profile.dev.package."*"]
 opt-level = 3

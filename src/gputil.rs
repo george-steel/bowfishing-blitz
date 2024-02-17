@@ -1,3 +1,6 @@
+use std::path::Path;
+
+use image::ImageResult;
 use winit::dpi::PhysicalSize;
 
 pub struct GPUContext {
@@ -51,6 +54,27 @@ impl GPUContext {
             ..surface.get_default_config(&self.adapter, size.width.max(1), size.height.max(1)).unwrap()
         };
         surface.configure(&self.device, &surface_config);
+    }
+
+    pub fn load_rgbe8_texture(&self, path: &Path) -> ImageResult<wgpu::Texture> {
+        let (width, height, data) = rgbe::load_rgbe8_png_file_as_rgb9e5(path)?;
+        let size = wgpu::Extent3d{width, height, depth_or_array_layers: 1};
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor{
+                label: path.to_str(),
+                dimension: wgpu::TextureDimension::D2,
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                format: wgpu::TextureFormat::Rgb9e5Ufloat,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+        });
+        self.queue.write_texture(wgpu::ImageCopyTexture{
+            texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All
+        }, bytemuck::cast_slice(&data), wgpu::ImageDataLayout{
+            offset: 0, bytes_per_row: Some(4 * width), rows_per_image: Some(height),
+        }, size);
+        Ok(tex)
     }
 }
 

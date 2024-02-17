@@ -7,8 +7,11 @@ use glam::f32::*;
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Camera {
     pub matrix: Mat4,
+    pub inv_matrix: Mat4,
     pub eye: Vec3,
+    pub clip_near: f32,
     pub time_s: f32,
+    pub pad: Vec3,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -114,9 +117,9 @@ pub struct CameraController {
 impl CameraController {
     pub const MAX_PITCH: f32 = 88.0;
 
-    pub fn new(settings: CameraSettings, eye: Vec3, horiz: f32, now: Instant) -> Self {
+    pub fn new(settings: CameraSettings, eye: Vec3, yaw: f32, now: Instant) -> Self {
         CameraController {
-            settings, eye, yaw: horiz,
+            settings, eye, yaw,
             pitch: 0.0,
             created_at: now,
             updated_at: now,
@@ -131,10 +134,16 @@ impl CameraController {
     pub fn camera(&self, aspect_ratio: f32) -> Camera {
         let mat = Mat4::perspective_infinite_reverse_rh(self.settings.fov_y.to_radians(), aspect_ratio, self.settings.clip_near,)
             * Mat4::look_to_rh(self.eye, self.look_dir(), Vec3::new(0.0, 0.0, 1.0));
+        if mat.determinant() == 0.0 {
+            panic!("Singular camera matrix: {:?}", mat);
+        }
         Camera {
             matrix: mat,
+            inv_matrix: mat.inverse(),
             eye: self.eye,
+            clip_near: self.settings.clip_near,
             time_s: (self.updated_at - self.created_at).as_secs_f32(),
+            pad: Vec3::ZERO,
         }
     }
 

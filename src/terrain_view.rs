@@ -3,7 +3,7 @@ use crate::camera::*;
 use glam::f32::*;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupEntry, BlendComponent, BufferUsages, ShaderStages};
-use std::{default::Default, slice, time::Instant};
+use std::{default::Default, slice, path::Path};
 
 
 #[repr(C)]
@@ -19,10 +19,12 @@ struct TerrainParams {
 pub struct TerrainView {
     terrain_pipeline: wgpu::RenderPipeline,
     water_pipeline: wgpu::RenderPipeline,
+    sky_pipeline: wgpu::RenderPipeline,
     params: TerrainParams,
     params_buf: wgpu::Buffer,
     camera_buf: wgpu::Buffer,
-    bind_group: wgpu::BindGroup,
+    terrain_bind_group: wgpu::BindGroup,
+    sky_bind_group: wgpu::BindGroup,
     last_size: wgpu::Extent3d,
     depth_tex: Option<wgpu::Texture>,
 }
@@ -56,7 +58,7 @@ impl TerrainView {
             bind_group_layouts: &[&bg_layout],
             push_constant_ranges: &[],
         });
-        let shader = ctx.device.create_shader_module(wgpu::include_wgsl!("noise.wgsl"));
+        let shader = ctx.device.create_shader_module(wgpu::include_wgsl!("shaders.wgsl"));
         let terrain_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
@@ -131,18 +133,56 @@ impl TerrainView {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let terrain_bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("terrain_bind_group"),
             layout: &terrain_pipeline.get_bind_group_layout(0),
             entries: &[
-                BindGroupEntry{binding: 0, resource: params_buf.as_entire_binding()},
-                BindGroupEntry{binding: 1, resource: camera_buf.as_entire_binding()},
+                BindGroupEntry{binding: 0, resource: camera_buf.as_entire_binding()},
+                BindGroupEntry{binding: 1, resource: params_buf.as_entire_binding()},
+            ]
+        });
+
+        let sky_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("sky"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "sky_vert",
+                buffers: &[]
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "sky_frag",
+                targets: &[Some(ctx.output_format.into())],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                ..wgpu::PrimitiveState::default()
+            },
+            depth_stencil: reverse_z(),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        let sky_tex = ctx.load_rgbe8_texture(Path::new("./assets/sky-equirect.rgbe8.png")).expect("Failed to load sky");
+        let sky_sampler = ctx.device.create_sampler(&wgpu::SamplerDescriptor {
+            ..wgpu::SamplerDescriptor::default()
+        });
+        let sky_tex_view = sky_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+        let sky_bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor{
+            label: Some("sky_bind_group"),
+            layout: &sky_pipeline.get_bind_group_layout(0),
+            entries: &[
+                BindGroupEntry{binding: 0, resource: camera_buf.as_entire_binding()},
+                BindGroupEntry{binding: 1, resource: wgpu::BindingResource::TextureView(&sky_tex_view)},
+                BindGroupEntry{binding: 2, resource: wgpu::BindingResource::Sampler(&sky_sampler)},
             ]
         });
 
         TerrainView {
-            terrain_pipeline, water_pipeline, params,
-            params_buf, camera_buf, bind_group,
+            terrain_pipeline, water_pipeline, sky_pipeline, params,
+            params_buf, camera_buf, terrain_bind_group, sky_bind_group,
             last_size: wgpu::Extent3d{width: 0, height: 0, depth_or_array_layers: 0},
             depth_tex: None,
         }
@@ -199,11 +239,16 @@ impl TerrainView {
         });
         
         rpass.set_pipeline(&self.terrain_pipeline);
-        rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_bind_group(0, &self.terrain_bind_group, &[]);
         rpass.draw(0..(2 * self.params.grid_size + 2), 0..(self.params.grid_size));
 
-        rpass.set_pipeline(&self.water_pipeline);
-        rpass.set_bind_group(0, &self.bind_group, &[]);
+        rpass.set_pipeline(&self.sky_pipeline);
+        rpass.set_bind_group(0, &self.sky_bind_group, &[]);
         rpass.draw(0..4, 0..1);
+
+        rpass.set_pipeline(&self.water_pipeline);
+        rpass.set_bind_group(0, &self.terrain_bind_group, &[]);
+        rpass.draw(0..4, 0..1);
+
     }
 }
