@@ -1,8 +1,11 @@
+use crate::deferred_renderer::DeferredRenderer;
+use crate::deferred_renderer::RenderObject;
 use crate::gputil::*;
 use crate::camera::*;
 use glam::f32::*;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{BindGroupEntry, BlendComponent, BufferUsages, ShaderStages};
+use std::borrow::Cow;
 use std::{default::Default, slice, path::Path};
 
 
@@ -18,19 +21,16 @@ struct TerrainParams {
 
 pub struct TerrainView {
     terrain_pipeline: wgpu::RenderPipeline,
-    water_pipeline: wgpu::RenderPipeline,
-    sky_pipeline: wgpu::RenderPipeline,
+    //water_pipeline: wgpu::RenderPipeline,
+    //sky_pipeline: wgpu::RenderPipeline,
     params: TerrainParams,
     params_buf: wgpu::Buffer,
-    camera_buf: wgpu::Buffer,
     terrain_bind_group: wgpu::BindGroup,
-    sky_bind_group: wgpu::BindGroup,
-    last_size: wgpu::Extent3d,
-    depth_tex: Option<wgpu::Texture>,
+    //sky_bind_group: wgpu::BindGroup,
 }
 
 impl TerrainView {
-    pub fn new(ctx: &GPUContext, camera: &CameraController) -> Self {
+    pub fn new(ctx: &GPUContext, renderer: &DeferredRenderer) -> Self {
         let bg_layout = ctx.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor{
             label: Some("Terrain Uniforms"),
             entries: &[wgpu::BindGroupLayoutEntry{
@@ -42,23 +42,17 @@ impl TerrainView {
                     min_binding_size: None,
                 },
                 count: None,
-            }, wgpu::BindGroupLayoutEntry{
-                binding: 1,
-                visibility: ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
             }]
         });
         let pipeline_layout = ctx.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
             label: Some("Terrain Pipeline Layout"),
-            bind_group_layouts: &[&bg_layout],
+            bind_group_layouts: &[&renderer.global_bind_layout, &bg_layout],
             push_constant_ranges: &[],
         });
-        let shader = ctx.device.create_shader_module(wgpu::include_wgsl!("shaders.wgsl"));
+        let shader = ctx.device.create_shader_module(wgpu::ShaderModuleDescriptor{
+            label: Some("terrain.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::terrain)),
+        });
         let terrain_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
@@ -70,7 +64,7 @@ impl TerrainView {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "terrain_frag",
-                targets: &[Some(ctx.output_format.into())],
+                targets: DeferredRenderer::GBUFFER_TARGETS,
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
@@ -82,7 +76,7 @@ impl TerrainView {
             multiview: None,
         });
 
-        let water_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        /*let water_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -110,7 +104,7 @@ impl TerrainView {
             depth_stencil: reverse_z(),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
-        });
+        });*/
 
         let transform = Mat4::from_translation(vec3(0.0, 0.0, 0.0));
         let params = TerrainParams{
@@ -127,22 +121,16 @@ impl TerrainView {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
 
         });
-        let camera_buf = ctx.device.create_buffer_init(&BufferInitDescriptor{
-            label: Some("camera_buf"),
-            contents: bytemuck::cast_slice(slice::from_ref(&camera.camera(1.0))),
-            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
-        });
 
         let terrain_bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("terrain_bind_group"),
             layout: &terrain_pipeline.get_bind_group_layout(0),
             entries: &[
-                BindGroupEntry{binding: 0, resource: camera_buf.as_entire_binding()},
-                BindGroupEntry{binding: 1, resource: params_buf.as_entire_binding()},
+                BindGroupEntry{binding: 0, resource: params_buf.as_entire_binding()},
             ]
         });
 
-        let sky_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        /*let sky_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("sky"),
             layout: None,
             vertex: wgpu::VertexState {
@@ -166,6 +154,10 @@ impl TerrainView {
 
         let sky_tex = ctx.load_rgbe8_texture(Path::new("./assets/sky-equirect.rgbe8.png")).expect("Failed to load sky");
         let sky_sampler = ctx.device.create_sampler(&wgpu::SamplerDescriptor {
+            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..wgpu::SamplerDescriptor::default()
         });
         let sky_tex_view = sky_tex.create_view(&wgpu::TextureViewDescriptor::default());
@@ -178,77 +170,19 @@ impl TerrainView {
                 BindGroupEntry{binding: 1, resource: wgpu::BindingResource::TextureView(&sky_tex_view)},
                 BindGroupEntry{binding: 2, resource: wgpu::BindingResource::Sampler(&sky_sampler)},
             ]
-        });
+        });*/
 
         TerrainView {
-            terrain_pipeline, water_pipeline, sky_pipeline, params,
-            params_buf, camera_buf, terrain_bind_group, sky_bind_group,
-            last_size: wgpu::Extent3d{width: 0, height: 0, depth_or_array_layers: 0},
-            depth_tex: None,
+            terrain_pipeline,  params,
+            params_buf,terrain_bind_group,
         }
     }
+}
 
-    fn resize(&mut self, ctx: &GPUContext, size: wgpu::Extent3d) {
-        let depth = ctx.device.create_texture(&wgpu::TextureDescriptor{
-            label: Some("depth"),
-            mip_level_count: 1,
-            size: size,
-            dimension: wgpu::TextureDimension::D2,
-            sample_count: 1,
-            format: wgpu::TextureFormat::Depth32Float,
-            view_formats: &[],
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        });
-
-        self.last_size = size;
-        self.depth_tex = Some(depth);
-    }
-
-    pub fn render(&mut self, ctx: &GPUContext, encoder: &mut wgpu::CommandEncoder, out: &wgpu::Texture, camera: &CameraController) {
-        let size = out.size();
-        let aspect = size.width as f32 / size.height as f32;
-
-        ctx.queue.write_buffer(&self.camera_buf, 0, bytemuck::cast_slice(slice::from_ref(&camera.camera(aspect))));
-
-        if size != self.last_size || self.depth_tex.is_none() {
-            self.resize(ctx, size);
-        }
-
-        let col_view = out.create_view(&Default::default());
-        let depth_view = self.depth_tex.as_ref().unwrap().create_view(&Default::default());
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &col_view,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment{
-                view: &depth_view,
-                depth_ops: Some(wgpu::Operations{
-                    load: wgpu::LoadOp::Clear(0.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        
-        rpass.set_pipeline(&self.terrain_pipeline);
-        rpass.set_bind_group(0, &self.terrain_bind_group, &[]);
-        rpass.draw(0..(2 * self.params.grid_size + 2), 0..(self.params.grid_size));
-
-        rpass.set_pipeline(&self.sky_pipeline);
-        rpass.set_bind_group(0, &self.sky_bind_group, &[]);
-        rpass.draw(0..4, 0..1);
-
-        rpass.set_pipeline(&self.water_pipeline);
-        rpass.set_bind_group(0, &self.terrain_bind_group, &[]);
-        rpass.draw(0..4, 0..1);
-
+impl RenderObject for TerrainView {
+    fn draw_opaque<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut wgpu::RenderPass<'a>) {
+        pass.set_pipeline(&self.terrain_pipeline);
+        pass.set_bind_group(1, &self.terrain_bind_group, &[]);
+        pass.draw(0..(2 * self.params.grid_size + 2), 0..(self.params.grid_size));
     }
 }

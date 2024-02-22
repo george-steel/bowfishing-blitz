@@ -1,79 +1,3 @@
-// LGC/Feistel-based 3d noise function
-// https://www.jcgt.org/published/0009/03/02/paper.pdf
-fn pcg3d_snorm(p: vec3i) -> vec3f {
-	var v = vec3u(p);
-	v = v * 1664525u + 1013904223u;
-
-	v.x += v.y*v.z;
-	v.y += v.z*v.x;
-	v.z += v.x*v.y;
-    v = v ^ (v >> vec3u(16));
-	v.x += v.y*v.z;
-	v.y += v.z*v.x;
-	v.z += v.x*v.y;
-	return ldexp(vec3f(v), vec3i(-31)) - 1.0;
-}
-
-fn smoother_step(x: f32) -> f32 {
-    let t = saturate(x);
-    return t*t*t*(t*(t*6.0 - 15.0) + 10.0);
-}
-
-alias gradval = vec3f; // gradient is x and y, value is z
-
-fn perlin_noise_deriv(xy: vec2f, xform: mat2x2f, seed: i32) -> gradval {
-    let uv = xform * xy;
-    let cell = vec2i(floor(uv));
-    let f = fract(uv);
-
-    let u = f*f*f*(f*(f*6 - 15) + 10);
-    let du = 30.0*f*f*(f*(f-2)+1);
-
-    let gsw = pcg3d_snorm(vec3i(cell.x, cell.y, seed)).xy;
-    let gnw = pcg3d_snorm(vec3i(cell.x, cell.y+1, seed)).xy;
-    let gse = pcg3d_snorm(vec3i(cell.x+1, cell.y, seed)).xy;
-    let gne = pcg3d_snorm(vec3i(cell.x+1, cell.y+1, seed)).xy;
-    let sw = vec3f(gsw, dot(gsw, vec2f(f.x, f.y)));
-    let nw = vec3f(gnw, dot(gnw, vec2f(f.x, f.y - 1)));
-    let se = vec3f(gse, dot(gse, vec2f(f.x - 1, f.y)));
-    let ne = vec3f(gne, dot(gne, vec2f(f.x - 1, f.y - 1)));
-
-    let w = mix(sw, nw, u.y) + vec3f(0, (nw.z - sw.z) * du.y, 0);
-    let e = mix(se, ne, u.y) + vec3f(0, (ne.z - se.z) * du.y, 0);
-    let n = mix(w, e, u.x) + vec3f((e.z - w.z) * du.x, 0, 0);
-    return vec3f(n.xy * xform, n.z);
-}
-
-const id2 = mat2x2f(vec2f(1,0), vec2f(0,1));
-
-fn fbm_deriv(uv: vec2f, init_transform: mat2x2f, octaves: u32, lancuarity: mat2x2f, gain: f32, init_seed: i32) -> gradval {
-    var out = vec3f(0);
-    var transform = init_transform;
-    var amp = 1.0;
-    var seed = init_seed;
-
-    for (var i:u32 = 0; i < octaves; i++) {
-        out += amp * perlin_noise_deriv(uv, transform, seed);
-        seed += 1;
-        amp *= gain;
-        transform = lancuarity * transform;
-    }
-    return out;
-}
-
-fn mult_gradval(a: gradval, b: gradval) -> gradval {
-    return vec3f(a.xy * b.z + b.xy * a.z, a.z * b.z);
-}
-
-fn abs_gradval(a: gradval) -> gradval {
-    return a * sign(a.z);
-}
-
-fn const_gradval(a: f32) -> gradval {
-    return vec3f(0.0, 0.0, a);
-}
-
-
 const ls1mat = mat2x2f(0.2, 0.1, -0.1, 0.2);
 const ls2mat = mat2x2f(0.5, -0.5, 0.5, 0.5);
 const oct = mat2x2f(2.159, 0.978, -0.978, 2.159);
@@ -85,15 +9,6 @@ fn terrain(uv: vec2f) -> vec3f {
     return ls + mult_gradval(fs, const_gradval(0.2) + 0.5 * abs_gradval(ls));// - const_gradval(1.0);
 }
 
-// perform refraction
-fn apparent_depth(dist: f32, eye_height: f32, depth: f32) -> f32 {
-    var oblique = dist / (0.75 * abs(depth) + eye_height);
-    var ratio = sqrt(0.77 * oblique * oblique + 1.77);
-    oblique = dist / (abs(depth) / ratio + eye_height);
-    ratio = sqrt(0.77 * oblique * oblique + 1.77);
-    return depth / ratio;
-}
-
 struct TerrainParams {
     transform: mat4x4f, // must be affine with the linear portion having have z as an eigenvector
     inv_transform: mat4x4f,
@@ -102,13 +17,6 @@ struct TerrainParams {
     grid_size: u32,
 }
 
-struct Camera {
-    matrix: mat4x4f,
-    inv_matrix: mat4x4f,
-    eye: vec3f,
-    clip_near: f32,
-    time: f32,
-}
 
 struct TerrainVertexOut {
     @builtin(position) clip_pos: vec4f,
@@ -117,8 +25,7 @@ struct TerrainVertexOut {
     @location(2) world_normal: vec3f,
 }
 
-@group(0) @binding(0) var<uniform> camera: Camera;
-@group(0) @binding(1) var<uniform> tparams: TerrainParams;
+@group(1) @binding(0) var<uniform> tparams: TerrainParams;
 
 @vertex fn terrain_mesh(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> TerrainVertexOut {
     let ij = vec2i(vec2u(inst_idx + (vert_idx % 2), vert_idx / 2));
@@ -130,13 +37,13 @@ struct TerrainVertexOut {
     let world_norm = (vec4f(local_norm, 0) * tparams.inv_transform).xyz;
 
     var refract_pos = world_pos;
-    if zd.z < 0 {
+    /*if zd.z < 0 {
         let sealevel = tparams.transform[3].z;
         let cam_height = camera.eye.z - sealevel;
         let cam_dist = length(world_pos.xy - camera.eye.xy);
         let depth = world_pos.z - sealevel;
         refract_pos.z = sealevel + apparent_depth(cam_dist, cam_height, depth);
-    }
+    }*/
 
     var out: TerrainVertexOut;
     out.clip_pos = camera.matrix * refract_pos;
@@ -149,7 +56,7 @@ struct TerrainVertexOut {
 const sun = vec3(0.548, -0.380, 0.745);
 const uw_sun = vec3(0.412, -0.285, 0.865);
 
-@fragment fn terrain_frag(v: TerrainVertexOut) -> @location(0) vec4f {
+@fragment fn terrain_frag(v: TerrainVertexOut) -> GBufferPoint {
     let uv = v.terrain_coord;
     let zd = terrain(uv);
     let local_norm = normalize(vec3f(-zd.xy, 1));
@@ -169,18 +76,24 @@ const uw_sun = vec3(0.412, -0.285, 0.865);
     let lcol = vec3f(0.1, 0.5, 0.5);
 
     let albedo = mix(lcol, col, line_fac);
-
+    /*
     var spec: f32 = 0.0;
     if zd.z > 0 {
         let view = normalize(camera.eye.xyz - v.world_pos);
         let h = normalize(view + sun);
         let crd = length(norm - h);
         spec = 1.0 - smoothstep(0.02, 0.05, crd);
-    }
+    }*/
+
+    var out: GBufferPoint;
+    out.albedo = vec4f(albedo, 1.0);
+    out.normal = vec4f(0.5 * (norm + 1), 1.0);
+    out.mat_type = MAT_SOLID;
+    return out;
     
     //let norm = normalize(v.world_normal);
-    let light = 0.02 + 0.9 * max(0.0, dot(select(sun, uw_sun, z < 0), norm));
-    return vec4f(vec3f(spec) + albedo * light, 1);
+    //let light = 0.02 + 0.9 * max(0.0, dot(select(sun, uw_sun, z < 0), norm));
+    //return vec4f(vec3f(spec) + albedo * light, 1);
 }
 
 @vertex fn water_quad(@builtin(vertex_index) vert_idx: u32) -> TerrainVertexOut {

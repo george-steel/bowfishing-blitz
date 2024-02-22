@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use image::ImageResult;
-use winit::dpi::PhysicalSize;
+use winit::{dpi::PhysicalSize, window::Window};
+use glam::*;
 
 pub struct GPUContext {
     pub instance: wgpu::Instance,
@@ -24,7 +25,7 @@ impl GPUContext {
 
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             label: None,
-            required_features: wgpu::Features::empty(),
+            required_features: wgpu::Features::RG11B10UFLOAT_RENDERABLE,
             required_limits: wgpu::Limits::default(),
         }, None)
         .await
@@ -46,12 +47,12 @@ impl GPUContext {
         }
     }
 
-    pub fn configure_surface_target(&self, surface: &wgpu::Surface, size: PhysicalSize<u32>) {
+    pub fn configure_surface_target(&self, surface: &wgpu::Surface, size: UVec2) {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: self.output_format,
             present_mode: wgpu::PresentMode::Fifo,
-            ..surface.get_default_config(&self.adapter, size.width.max(1), size.height.max(1)).unwrap()
+            ..surface.get_default_config(&self.adapter, size.x.max(1), size.y.max(1)).unwrap()
         };
         surface.configure(&self.device, &surface_config);
     }
@@ -76,6 +77,19 @@ impl GPUContext {
         }, size);
         Ok(tex)
     }
+
+    pub fn create_empty_texture(&self, size: wgpu::Extent3d, format: wgpu::TextureFormat, label: &'static str) -> (wgpu::Texture, wgpu::TextureView) {
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor{
+            label: Some(label),
+            size, format,
+            mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        (tex, view)
+    }
 }
 
 pub fn reverse_z() -> Option<wgpu::DepthStencilState> {
@@ -86,4 +100,13 @@ pub fn reverse_z() -> Option<wgpu::DepthStencilState> {
         stencil: wgpu::StencilState::default(),
         bias: wgpu::DepthBiasState::default(),
     })
+}
+
+pub fn window_size(window: &Window) -> UVec2 {
+    let isize = window.inner_size();
+    uvec2(isize.width, isize.height)
+}
+
+pub fn extent_2d(size: UVec2) -> wgpu::Extent3d {
+    wgpu::Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1}
 }

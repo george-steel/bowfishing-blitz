@@ -10,8 +10,9 @@ pub struct Camera {
     pub inv_matrix: Mat4,
     pub eye: Vec3,
     pub clip_near: f32,
+    pub fb_size: Vec2,
     pub time_s: f32,
-    pub pad: Vec3,
+    pub pad: f32,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -131,7 +132,8 @@ impl CameraController {
         let pitch_rad = self.pitch.to_radians();
         Vec3::new(pitch_rad.cos() * yaw_rad.cos(), pitch_rad.cos() * yaw_rad.sin(), pitch_rad.sin())
     }
-    pub fn camera(&self, aspect_ratio: f32) -> Camera {
+    pub fn camera(&self, fb_size: Vec2) -> Camera {
+        let aspect_ratio = fb_size.x / fb_size.y;
         let mat = Mat4::perspective_infinite_reverse_rh(self.settings.fov_y.to_radians(), aspect_ratio, self.settings.clip_near,)
             * Mat4::look_to_rh(self.eye, self.look_dir(), Vec3::new(0.0, 0.0, 1.0));
         if mat.determinant() == 0.0 {
@@ -142,8 +144,9 @@ impl CameraController {
             inv_matrix: mat.inverse(),
             eye: self.eye,
             clip_near: self.settings.clip_near,
+            fb_size,
             time_s: (self.updated_at - self.created_at).as_secs_f32(),
-            pad: Vec3::ZERO,
+            pad: 0.0,
         }
     }
 
