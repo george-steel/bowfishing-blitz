@@ -1,3 +1,5 @@
+const PI = 3.1415926535;
+
 struct Camera {
     matrix: mat4x4f,
     inv_matrix: mat4x4f,
@@ -7,22 +9,8 @@ struct Camera {
     time: f32,
 }
 
-struct DirectionLight {
-    direction: vec3f,
-    pad0: f32,
-    refr_direction: vec3f,
-    pad1: f32,
-    color: vec3f,
-}
-
 @group(0) @binding(0) var<uniform> camera: Camera;
 //@group(0) @binding(0) var<uniform> sun: DirectionLight;
-
-fn look_dir(fb_xy: vec2f) -> vec3f {
-    let clip_xy = ((fb_xy / camera.fb_size) - 0.5) * vec2f(2, -2);
-    let clip_pos = vec4f(clip_xy * camera.clip_near, camera.clip_near, camera.clip_near);
-    return normalize((camera.inv_matrix * clip_pos).xyz - camera.eye);
-}
 
 const MAT_SKY: u32 = 0; // cleared value;
 const MAT_SOLID: u32 = 1; // general Cook-Torrance

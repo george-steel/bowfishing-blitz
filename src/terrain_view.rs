@@ -21,7 +21,8 @@ struct TerrainParams {
 
 pub struct TerrainView {
     terrain_pipeline: wgpu::RenderPipeline,
-    //water_pipeline: wgpu::RenderPipeline,
+    underwater_terrain_pipeline: wgpu::RenderPipeline,
+    water_pipeline: wgpu::RenderPipeline,
     //sky_pipeline: wgpu::RenderPipeline,
     params: TerrainParams,
     params_buf: wgpu::Buffer,
@@ -76,7 +77,30 @@ impl TerrainView {
             multiview: None,
         });
 
-        /*let water_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let underwater_terrain_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "underwater_terrain_mesh",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "underwater_terrain_frag",
+                targets: DeferredRenderer::UNDERWATER_GBUFFER_TARGETS,
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                cull_mode: Some(wgpu::Face::Back),
+                ..wgpu::PrimitiveState::default()
+            },
+            depth_stencil: reverse_z(),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
+        let water_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -87,14 +111,7 @@ impl TerrainView {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: "water_frag",
-                targets: &[Some(wgpu::ColorTargetState{
-                    format: ctx.output_format,
-                    blend: Some(wgpu::BlendState{
-                        color: BlendComponent::OVER,
-                        alpha: BlendComponent::default(),
-                    }),
-                    write_mask: wgpu::ColorWrites::COLOR,
-                })],
+                targets: DeferredRenderer::GBUFFER_TARGETS,
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
@@ -104,7 +121,7 @@ impl TerrainView {
             depth_stencil: reverse_z(),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
-        });*/
+        });
 
         let transform = Mat4::from_translation(vec3(0.0, 0.0, 0.0));
         let params = TerrainParams{
@@ -173,16 +190,26 @@ impl TerrainView {
         });*/
 
         TerrainView {
-            terrain_pipeline,  params,
-            params_buf,terrain_bind_group,
+            terrain_pipeline, underwater_terrain_pipeline, water_pipeline,
+            params, params_buf, terrain_bind_group,
         }
     }
 }
 
 impl RenderObject for TerrainView {
-    fn draw_opaque<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut wgpu::RenderPass<'a>) {
-        pass.set_pipeline(&self.terrain_pipeline);
+    fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut wgpu::RenderPass<'a>) {
+        pass.set_pipeline(&self.underwater_terrain_pipeline);
         pass.set_bind_group(1, &self.terrain_bind_group, &[]);
+        pass.draw(0..(2 * self.params.grid_size + 2), 0..(self.params.grid_size));
+    }
+
+    fn draw_opaque<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut wgpu::RenderPass<'a>) {
+        pass.set_bind_group(1, &self.terrain_bind_group, &[]);
+
+        pass.set_pipeline(&self.water_pipeline);
+        pass.draw(0..4, 0..1);
+
+        pass.set_pipeline(&self.terrain_pipeline);
         pass.draw(0..(2 * self.params.grid_size + 2), 0..(self.params.grid_size));
     }
 }

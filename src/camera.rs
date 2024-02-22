@@ -1,5 +1,5 @@
-use std::{f32::consts::TAU, ops::Rem, time::Instant};
-use winit::{event::ElementState, keyboard::{Key, KeyCode, PhysicalKey::{self, *}}};
+use std::{ops::Rem, time::Instant};
+use winit::{event::ElementState, keyboard::{KeyCode, PhysicalKey::{self, *}}};
 
 use glam::f32::*;
 
@@ -59,9 +59,9 @@ impl CameraInputAccum {
             rot_y: 0.0,
         }
     }
-    fn clear(&mut self) {
-        *self = Self::new();
-    }
+    //fn clear(&mut self) {
+    //    *self = Self::new();
+    //}
 
     fn vel_long(&self) -> f32 {
         self.vel_fwd - self.vel_rev
