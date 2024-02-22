@@ -72,3 +72,8 @@ fn abs_gradval(a: gradval) -> gradval {
 fn const_gradval(a: f32) -> gradval {
     return vec3f(0.0, 0.0, a);
 }
+
+fn sin_wave_deriv(xy: vec2f, freq_dir: vec2f, phase: f32) -> gradval {
+    let u = (dot(freq_dir, xy) + phase) * TAU;
+    return vec3f(TAU * cos(u) * freq_dir, sin(u));
+}

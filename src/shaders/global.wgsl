@@ -1,4 +1,5 @@
-const PI = 3.1415926535;
+const PI  = 3.1415926535;
+const TAU = 6.2821853072;
 
 struct Camera {
     matrix: mat4x4f,

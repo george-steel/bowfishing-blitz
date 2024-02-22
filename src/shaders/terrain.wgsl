@@ -80,18 +80,9 @@ const uw_sun = vec3(0.412, -0.285, 0.865);
     // contour lines
     let hspan = length(vec2f(dpdx(z), dpdy(z)));
     let cdist = 0.1 * abs(10 * z - round(10 * z)) / hspan; // in pixels
-    let line_fac = smoothstep(0.5, 1.0, cdist);
+    let line_fac = smoothstep(1.0, 1.5, cdist);
     let lcol = vec3f(0.1, 0.5, 0.5);
-
     let albedo = mix(lcol, col, line_fac);
-    /*
-    var spec: f32 = 0.0;
-    if zd.z > 0 {
-        let view = normalize(camera.eye.xyz - v.world_pos);
-        let h = normalize(view + sun);
-        let crd = length(norm - h);
-        spec = 1.0 - smoothstep(0.02, 0.05, crd);
-    }*/
 
     var out: GBufferPoint;
     out.albedo = vec4f(albedo, 1.0);
@@ -99,10 +90,6 @@ const uw_sun = vec3(0.412, -0.285, 0.865);
     out.occlusion = 1.0;
     out.mat_type = MAT_SOLID;
     return out;
-    
-    //let norm = normalize(v.world_normal);
-    //let light = 0.02 + 0.9 * max(0.0, dot(select(sun, uw_sun, z < 0), norm));
-    //return vec4f(vec3f(spec) + albedo * light, 1);
 }
 
 @fragment fn underwater_terrain_frag(v: TerrainVertexOut) -> UnderwaterPoint {
@@ -133,10 +120,11 @@ const uw_sun = vec3(0.412, -0.285, 0.865);
     out.mat_type = MAT_SOLID;
     out.depth_adj = v.refract_pos.z / v.world_pos.z;
     return out;
-    
-    //let norm = normalize(v.world_normal);
-    //let light = 0.02 + 0.9 * max(0.0, dot(select(sun, uw_sun, z < 0), norm));
-    //return vec4f(vec3f(spec) + albedo * light, 1);
+}
+
+fn water_ripples(xy: vec2f) -> gradval {
+    return 0.005 * sin_wave_deriv(xy, vec2f(0.5, 1.8), camera.time % 0.9)
+         + 0.008 * perlin_noise_deriv(xy + vec2f(-0.1, -0.8) * camera.time, mat2x2f(3.5, 0.0, 0.0, 5.3), 0);
 }
 
 @vertex fn water_quad(@builtin(vertex_index) vert_idx: u32) -> TerrainVertexOut {
@@ -154,13 +142,8 @@ const uw_sun = vec3(0.412, -0.285, 0.865);
 }
 
 @fragment fn water_frag(v: TerrainVertexOut) -> GBufferPoint {
-    let norm = normalize((vec4f(0,0,1,0) * tparams.inv_transform).xyz);
-
-    /*let to_eye = normalize(camera.eye.xyz - v.world_pos);
-    let refl = 0.02 + 0.98 * pow(1.0 - dot(norm, to_eye), 5.0);
-    let h = normalize(to_eye + sun);
-    let crd = length(norm - h);
-    let spec = 1.0-smoothstep(0.05, 0.15, crd);*/
+    let ripple = water_ripples(v.world_pos.xy);
+    let norm = normalize(vec3f(-ripple.xy, 1.0));
 
     var out: GBufferPoint;
     out.albedo = vec4f(0.5, 0.5, 0.5, 1.0);

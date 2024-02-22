@@ -23,11 +23,9 @@ pub struct TerrainView {
     terrain_pipeline: wgpu::RenderPipeline,
     underwater_terrain_pipeline: wgpu::RenderPipeline,
     water_pipeline: wgpu::RenderPipeline,
-    //sky_pipeline: wgpu::RenderPipeline,
     params: TerrainParams,
     params_buf: wgpu::Buffer,
     terrain_bind_group: wgpu::BindGroup,
-    //sky_bind_group: wgpu::BindGroup,
 }
 
 impl TerrainView {
@@ -146,48 +144,6 @@ impl TerrainView {
                 BindGroupEntry{binding: 0, resource: params_buf.as_entire_binding()},
             ]
         });
-
-        /*let sky_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("sky"),
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "sky_vert",
-                buffers: &[]
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "sky_frag",
-                targets: &[Some(ctx.output_format.into())],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                ..wgpu::PrimitiveState::default()
-            },
-            depth_stencil: reverse_z(),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-        });
-
-        let sky_tex = ctx.load_rgbe8_texture(Path::new("./assets/sky-equirect.rgbe8.png")).expect("Failed to load sky");
-        let sky_sampler = ctx.device.create_sampler(&wgpu::SamplerDescriptor {
-            min_filter: wgpu::FilterMode::Linear,
-            mag_filter: wgpu::FilterMode::Linear,
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::ClampToEdge,
-            ..wgpu::SamplerDescriptor::default()
-        });
-        let sky_tex_view = sky_tex.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let sky_bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor{
-            label: Some("sky_bind_group"),
-            layout: &sky_pipeline.get_bind_group_layout(0),
-            entries: &[
-                BindGroupEntry{binding: 0, resource: camera_buf.as_entire_binding()},
-                BindGroupEntry{binding: 1, resource: wgpu::BindingResource::TextureView(&sky_tex_view)},
-                BindGroupEntry{binding: 2, resource: wgpu::BindingResource::Sampler(&sky_sampler)},
-            ]
-        });*/
 
         TerrainView {
             terrain_pipeline, underwater_terrain_pipeline, water_pipeline,
