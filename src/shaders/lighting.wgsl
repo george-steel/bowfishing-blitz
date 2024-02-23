@@ -64,13 +64,17 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         let corr_z = look_dir.z / refr_up.z;
         let trans_dir = normalize(vec3f(refr_norm.xy * corr_xy, refr_norm.z * corr_z)); // in planar-refracted space
         let uw_dist_val = textureSampleLevel(water_dist_buf, water_sampler, uv, 0.0);
-        let uw_dist = length(world_pos - camera.eye) * dist_val / uw_dist_val;
-        let refr_point = world_pos + uw_dist * trans_dir;
+        let uw_dist = length(world_pos - camera.eye) * (dist_val / uw_dist_val - 1.0);
+        let refr_point = world_pos + uw_dist * trans_dir; // CSPR on
+        //let refr_point = world_pos + uw_dist * normalize(look_dir + 0.75 * (refr_norm - refr_up)); // CSPR off
         let refr_clip = camera.matrix * vec4f(refr_point, 1.0);
-        let refr_uv = vec2f(0.5, -0.5) * refr_clip.xy / refr_clip.w + 0.5;
+        let refr_uv1 = vec2f(0.5, -0.5) * refr_clip.xy / refr_clip.w + 0.5;
+        //let uw_dist_val_2 = textureSampleLevel(water_dist_buf, water_sampler, refr_uv1, 0.0);
+        //let corr_uv = min(2.0, (1 / uw_dist_val_2 - 1 / dist_val) / (refr_clip.w / refr_clip.z - 1 / dist_val));
+        //let refr_uv = uv + (refr_uv1 - uv) * corr_uv;
 
         let fresnel = 0.02 + 0.98 * pow(1.0 - max(0.0, dot(normal, -look_dir)), 5.0);
-        let trans = textureSampleLevel(water_buf, water_sampler, refr_uv, 0.0).xyz;
+        let trans = textureSampleLevel(water_buf, water_sampler, refr_uv1, 0.0).xyz;
         let refl = get_sky(reflect(look_dir, normal));
         color = mix(trans, refl, fresnel);
     } else {

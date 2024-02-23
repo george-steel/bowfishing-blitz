@@ -49,6 +49,7 @@ struct TerrainVertexOut {
     let local_pos = vec4f(uv, zd.z, 1);
     let world_pos = tparams.transform * local_pos;
 
+    // Clip-space planar refraction: move vertices to their virtual images when converting to clip space.
     var refract_pos = world_pos;
     let sealevel = tparams.transform[3].z;
     let cam_height = camera.eye.z - sealevel;
@@ -124,7 +125,8 @@ const uw_sun = vec3(0.412, -0.285, 0.865);
 
 fn water_ripples(xy: vec2f) -> gradval {
     return 0.005 * sin_wave_deriv(xy, vec2f(0.5, 1.8), camera.time % 0.9)
-         + 0.008 * perlin_noise_deriv(xy + vec2f(-0.1, -0.8) * camera.time, mat2x2f(3.5, 0.0, 0.0, 5.3), 0);
+        + 0.015 * perlin_noise_deriv(xy + vec2f(0.2, 1.1) * camera.time, mat2x2f(0.8, -1.9, 3.8, 0.4), 1)
+        + 0.012 * perlin_noise_deriv(xy + vec2f(-0.1, -0.8) * camera.time, mat2x2f(3.5, 0.0, 0.0, 6.7), 0);
 }
 
 @vertex fn water_quad(@builtin(vertex_index) vert_idx: u32) -> TerrainVertexOut {

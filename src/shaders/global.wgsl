@@ -44,6 +44,10 @@ fn apparent_depth(dist: f32, eye_height: f32, depth: f32) -> f32 {
     ratio = sqrt(0.77 * oblique * oblique + 1.77);
     oblique = dist / (abs(depth) / ratio + eye_height);
     ratio = sqrt(0.77 * oblique * oblique + 1.77);
+    oblique = dist / (abs(depth) / ratio + eye_height);
+    ratio = sqrt(0.77 * oblique * oblique + 1.77);
+    oblique = dist / (abs(depth) / ratio + eye_height);
+    ratio = sqrt(0.77 * oblique * oblique + 1.77);
     return depth / ratio;
 }
 
