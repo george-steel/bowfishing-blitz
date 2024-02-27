@@ -1,28 +1,23 @@
 // LGC/Feistel-based 3d noise function
 // https://www.jcgt.org/published/0009/03/02/paper.pdf
 fn pcg3d_snorm(p: vec3i) -> vec3f {
-	var v = vec3u(p);
-	v = v * 1664525u + 1013904223u;
+    var v = vec3u(p);
+    v = v * 1664525u + 1013904223u;
 
-	v.x += v.y*v.z;
-	v.y += v.z*v.x;
-	v.z += v.x*v.y;
+    v.x += v.y*v.z;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
     v = v ^ (v >> vec3u(16));
-	v.x += v.y*v.z;
-	v.y += v.z*v.x;
-	v.z += v.x*v.y;
-	return ldexp(vec3f(v), vec3i(-31)) - 1.0;
-}
-
-fn smoother_step(x: f32) -> f32 {
-    let t = saturate(x);
-    return t*t*t*(t*(t*6.0 - 15.0) + 10.0);
+    v.x += v.y*v.z;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+    return ldexp(vec3f(v), vec3i(-31)) - 1.0;
 }
 
 alias gradval = vec3f; // gradient is x and y, value is z
 
-fn perlin_noise_deriv(xy: vec2f, xform: mat2x2f, seed: i32) -> gradval {
-    let uv = xform * xy;
+fn perlin_noise_deriv(xy: vec2f, freq: mat2x2f, seed: i32) -> gradval {
+    let uv = freq * xy;
     let cell = vec2i(floor(uv));
     let f = fract(uv);
 
@@ -41,7 +36,7 @@ fn perlin_noise_deriv(xy: vec2f, xform: mat2x2f, seed: i32) -> gradval {
     let w = mix(sw, nw, u.y) + vec3f(0, (nw.z - sw.z) * du.y, 0);
     let e = mix(se, ne, u.y) + vec3f(0, (ne.z - se.z) * du.y, 0);
     let n = mix(w, e, u.x) + vec3f((e.z - w.z) * du.x, 0, 0);
-    return vec3f(n.xy * xform, n.z);
+    return vec3f(n.xy * freq, n.z);
 }
 
 const id2 = mat2x2f(vec2f(1,0), vec2f(0,1));

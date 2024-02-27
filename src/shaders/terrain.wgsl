@@ -5,7 +5,7 @@ fn terrain(uv: vec2f) -> vec3f {
     let ls1 = 1.5 * perlin_noise_deriv(uv, ls1mat, 0) + const_gradval(0.2);
     let ls2 = perlin_noise_deriv(uv, ls2mat, 1);
     let ls = ls1 + 0.3 * mult_gradval(ls1 + const_gradval(1.0), ls2);
-    let fs = fbm_deriv(uv, id2, 6u, oct, 0.35, 4);
+    let fs = fbm_deriv(uv, id2, 6u, oct, 0.35, 5);
     return ls + mult_gradval(fs, const_gradval(0.2) + 0.5 * abs_gradval(ls));// - const_gradval(1.0);
 }
 
@@ -65,9 +65,15 @@ struct TerrainVertexOut {
     return out;
 }
 
+const grass_col = vec3f(0.26406, 0.46721, 0.12113);
+const beach_col = vec3f(0.45, 0.37, 0.25);
+const rock_col = vec3f(0.168, 0.171, 0.216);
 
-const sun = vec3(0.548, -0.380, 0.745);
-const uw_sun = vec3(0.412, -0.285, 0.865);
+fn terrain_albedo(uv: vec2f, z: f32, norm: vec3f, shore: f32) -> vec3f {
+    let bias = fbm_deriv(uv, mat2x2f(6.0, 0.0, 0.0, 6.0), 4u, oct, 0.6, 0).z;
+    let flat_col = mix(beach_col - 0.1 * bias, grass_col - 0.05 * bias, smoothstep(0.0, shore, z - 0.1 * bias));
+    return mix(rock_col + 0.05 * bias, flat_col, smoothstep(0.5, 0.9, norm.z + 0.1 * bias));
+}
 
 @fragment fn terrain_frag(v: TerrainVertexOut) -> GBufferPoint {
     let uv = v.terrain_coord;
@@ -79,11 +85,12 @@ const uw_sun = vec3(0.412, -0.285, 0.865);
     let col = vec3f(saturate(0.5 + 0.5 * z), 0.9, saturate(0.3 + 0.3 * z));
 
     // contour lines
-    let hspan = length(vec2f(dpdx(z), dpdy(z)));
+    /*let hspan = length(vec2f(dpdx(z), dpdy(z)));
     let cdist = 0.1 * abs(10 * z - round(10 * z)) / hspan; // in pixels
     let line_fac = smoothstep(1.0, 1.5, cdist);
     let lcol = vec3f(0.1, 0.5, 0.5);
-    let albedo = mix(lcol, col, line_fac);
+    let albedo = mix(lcol, col, line_fac);*/
+    let albedo = terrain_albedo(uv, z, norm, 0.2);
 
     var out: GBufferPoint;
     out.albedo = vec4f(albedo, 1.0);
@@ -106,13 +113,7 @@ const uw_sun = vec3(0.412, -0.285, 0.865);
     let z = zd.z;
     let col = vec3f(0.7, 0.7, 0.8);
 
-    // contour lines
-    let hspan = length(vec2f(dpdx(z), dpdy(z)));
-    let cdist = 0.1 * abs(10 * z - round(10 * z)) / hspan; // in pixels
-    let line_fac = smoothstep(0.5, 1.0, cdist);
-    let lcol = vec3f(0.1, 0.5, 0.5);
-
-    let albedo = mix(lcol, col, line_fac);
+    let albedo = terrain_albedo(uv, z, norm, 0.2);
 
     var out: UnderwaterPoint;
     out.albedo = vec4f(albedo, 1.0);
