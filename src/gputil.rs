@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::{fs::File, path::Path};
 
-use image::ImageResult;
+use image::{ImageDecoder, ImageError, ImageResult};
 use winit::{dpi::PhysicalSize, window::Window};
 use glam::*;
 
@@ -51,7 +51,7 @@ impl GPUContext {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: self.output_format,
-            present_mode: wgpu::PresentMode::Fifo,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
             ..surface.get_default_config(&self.adapter, size.x.max(1), size.y.max(1)).unwrap()
         };
         surface.configure(&self.device, &surface_config);
@@ -74,6 +74,27 @@ impl GPUContext {
             texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All
         }, bytemuck::cast_slice(&data), wgpu::ImageDataLayout{
             offset: 0, bytes_per_row: Some(4 * width), rows_per_image: Some(height),
+        }, size);
+        Ok(tex)
+    }
+
+    pub fn load_r16f_texture(&self, path: &Path) -> ImageResult<wgpu::Texture> {
+        let (width, height, data) = load_png16(path)?;
+        let size = wgpu::Extent3d{width, height, depth_or_array_layers: 1};
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor{
+                label: path.to_str(),
+                dimension: wgpu::TextureDimension::D2,
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                format: wgpu::TextureFormat::R16Float,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+        });
+        self.queue.write_texture(wgpu::ImageCopyTexture{
+            texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All
+        }, bytemuck::cast_slice(&data), wgpu::ImageDataLayout{
+            offset: 0, bytes_per_row: Some(2 * width), rows_per_image: Some(height),
         }, size);
         Ok(tex)
     }
@@ -109,4 +130,24 @@ pub fn window_size(window: &Window) -> UVec2 {
 
 pub fn extent_2d(size: UVec2) -> wgpu::Extent3d {
     wgpu::Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1}
+}
+
+pub fn load_png16(path: &Path) -> ImageResult<(u32, u32, Box<[u16]>)> {
+    let file = File::open(path).map_err(ImageError::IoError)?;
+    let decoder = image::codecs::png::PngDecoder::new(file)?;
+    let (width, height) = decoder.dimensions();
+    let size = (width * height) as usize;
+    let mut out = bytemuck::allocation::zeroed_slice_box::<u16>(size);
+    decoder.read_image(bytemuck::cast_slice_mut(&mut out))?;
+    Ok((width, height, out))
+}
+
+pub fn load_png32(path: &Path) -> ImageResult<(u32, u32, Box<[u32]>)> {
+    let file = File::open(path).map_err(ImageError::IoError)?;
+    let decoder = image::codecs::png::PngDecoder::new(file)?;
+    let (width, height) = decoder.dimensions();
+    let size = (width * height) as usize;
+    let mut out = bytemuck::allocation::zeroed_slice_box::<u32>(size);
+    decoder.read_image(bytemuck::cast_slice_mut(&mut out))?;
+    Ok((width, height, out))
 }

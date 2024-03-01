@@ -26,7 +26,7 @@ pub struct CameraSettings {
 impl Default for CameraSettings {
     fn default() -> Self {
         CameraSettings {
-            lin_speed: 1.0,
+            lin_speed: 5.0,
             rot_speed: 0.05,
             fov_y: 45.0,
             clip_near: 0.1,

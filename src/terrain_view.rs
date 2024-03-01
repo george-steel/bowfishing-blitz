@@ -12,10 +12,8 @@ use std::{default::Default, slice, path::Path};
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct TerrainParams {
-    pub transform: Mat4,
-    pub inv_transform: Mat4,
-    pub uv_center: Vec2,
-    pub uv_radius: f32,
+    pub radius: f32,
+    pub z_scale: f32,
     pub grid_size: u32,
 }
 
@@ -29,30 +27,48 @@ pub struct TerrainView {
 }
 
 impl TerrainView {
-    pub fn new(ctx: &GPUContext, renderer: &DeferredRenderer) -> Self {
-        let bg_layout = ctx.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor{
+    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer) -> Self {
+        let bg_layout = gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor{
             label: Some("Terrain Uniforms"),
-            entries: &[wgpu::BindGroupLayoutEntry{
-                binding: 0,
-                visibility: ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry{
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
                 },
-                count: None,
-            }]
+                wgpu::BindGroupLayoutEntry{
+                    binding: 1,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry{
+                    binding: 2,
+                    visibility: ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ]
         });
-        let pipeline_layout = ctx.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
+        let pipeline_layout = gpu.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
             label: Some("Terrain Pipeline Layout"),
             bind_group_layouts: &[&renderer.global_bind_layout, &bg_layout],
             push_constant_ranges: &[],
         });
-        let shader = ctx.device.create_shader_module(wgpu::ShaderModuleDescriptor{
+        let shader = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor{
             label: Some("terrain.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::terrain)),
         });
-        let terrain_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let terrain_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -75,7 +91,7 @@ impl TerrainView {
             multiview: None,
         });
 
-        let underwater_terrain_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let underwater_terrain_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -98,7 +114,7 @@ impl TerrainView {
             multiview: None,
         });
 
-        let water_pipeline = ctx.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let water_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -121,27 +137,36 @@ impl TerrainView {
             multiview: None,
         });
 
-        let transform = Mat4::from_translation(vec3(0.0, 0.0, 0.0));
+        let height_tex = gpu.load_r16f_texture(Path::new("./assets/terrain_heightmap.png")).expect("Failed to load terrain");
+        let height_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
+            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..wgpu::SamplerDescriptor::default()
+        });
+        let height_tex_view = height_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
         let params = TerrainParams{
-            transform,
-            inv_transform: transform.inverse(),
-            uv_center: Vec2::ZERO,
-            uv_radius: 10.0,
-            grid_size: 200,
+            radius: 60.0,
+            z_scale: 1.0,
+            grid_size: 360,
         };
 
-        let params_buf = ctx.device.create_buffer_init(&BufferInitDescriptor{
+        let params_buf = gpu.device.create_buffer_init(&BufferInitDescriptor{
             label: Some("params_buf"),
             contents: bytemuck::cast_slice(slice::from_ref(&params)),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
 
         });
 
-        let terrain_bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let terrain_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("terrain_bind_group"),
-            layout: &terrain_pipeline.get_bind_group_layout(0),
+            layout: &bg_layout,
             entries: &[
                 BindGroupEntry{binding: 0, resource: params_buf.as_entire_binding()},
+                BindGroupEntry{binding: 1, resource: wgpu::BindingResource::TextureView(&height_tex_view)},
+                BindGroupEntry{binding: 2, resource: wgpu::BindingResource::Sampler(&height_sampler)},
             ]
         });
 
