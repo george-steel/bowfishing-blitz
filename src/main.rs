@@ -1,4 +1,4 @@
-use cspr_demo::*;
+use bowfishing_blitz::*;
 use gputil::*;
 use camera::*;
 use deferred_renderer::*;
@@ -19,7 +19,9 @@ fn main() {
 
     let wgpu_inst = wgpu::Instance::default();
     let event_loop = EventLoop::new().unwrap();
-    let window = winit::window::WindowBuilder::new().build(&event_loop).unwrap();
+    let window = winit::window::WindowBuilder::new()
+            .with_title("Bowfishing Blitz")
+            .build(&event_loop).unwrap();
     let surface = wgpu_inst.create_surface(&window).unwrap();
     
     let gpu = pollster::block_on(GPUContext::with_default_limits(wgpu_inst, Some(&surface)));

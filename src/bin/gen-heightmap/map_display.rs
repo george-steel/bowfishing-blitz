@@ -1,4 +1,4 @@
-use cspr_demo::*;
+use bowfishing_blitz::*;
 use gputil::*;
 use std::borrow::Cow;
 
