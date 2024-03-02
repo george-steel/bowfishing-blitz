@@ -15,7 +15,7 @@ image = {version = "0.24.8", default_features=false, features=["png", "hdr"] }
 log = "0.4.20"
 pollster = "0.3.0"
 wgpu = "0.19.3"
-winit = "0.29.12"
+winit = "=0.29.10"
 rgbe = "0.0.1"
 half = "2.4.0"
 

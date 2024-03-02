@@ -3,14 +3,11 @@ use gputil::*;
 use camera::*;
 use deferred_renderer::*;
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use glam::*;
 use winit::{
-    event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
-    event_loop::EventLoop,
-    keyboard::{Key, NamedKey},
-    window::{CursorGrabMode, Window}
+    event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent}, event_loop::EventLoop, keyboard::{Key, NamedKey}, platform::pump_events::{EventLoopExtPumpEvents, PumpStatus}, window::{CursorGrabMode, Window}
 };
 
 fn main() {
@@ -18,7 +15,7 @@ fn main() {
     log::info!("starting up");
 
     let wgpu_inst = wgpu::Instance::default();
-    let event_loop = EventLoop::new().unwrap();
+    let mut event_loop = EventLoop::new().unwrap();
     let window = winit::window::WindowBuilder::new()
             .with_title("Bowfishing Blitz")
             .build(&event_loop).unwrap();
@@ -38,15 +35,14 @@ fn main() {
 
     let mut grabbed = false;
     let window = &window;
-    event_loop
-        .run(move |event, target| {
-            // Have the closure take ownership of the resources.
-            // `event_loop.run` never returns, therefore we must do this to ensure
-            // the resources are properly cleaned up.
-            let _ = &gpu;
+    'mainloop: loop{
+        let surface_result = surface.get_current_texture();
+        log::info!("FRAME ------------------------------------------------------");
 
-            if let Event::DeviceEvent {device_id: _, event} = event.clone() {
-                match event {
+        let mut must_resize: Option<UVec2> = None;
+        let loop_status = event_loop.pump_events(Some(Duration::ZERO),  |event, target| {
+            match event {
+                Event::DeviceEvent {device_id: _, event: dev_event} => match dev_event {
                     DeviceEvent::Key(key_event) => {
                         if window.has_focus() {
                             camera.key(key_event.physical_key, key_event.state);
@@ -54,60 +50,72 @@ fn main() {
                     }
                     DeviceEvent::MouseMotion { delta: (dx, dy) } => {
                         if window.has_focus() && grabbed {
+                            log::info!("mouse {} {}", dx, dy);
                             camera.mouse(dx, dy);
                         }
                     }
                     _ => {}
                 }
-            }
-            if let Event::WindowEvent {window_id: _, event,} = event {
-                match event {
+                Event::WindowEvent {window_id: _, event,} => match event {
                     WindowEvent::Resized(new_size) => {
-                        size = uvec2(new_size.width, new_size.height);
-                        renderer.resize(&gpu, size);
-                        gpu.configure_surface_target(&surface, size);
+                        must_resize = Some(uvec2(new_size.width, new_size.height));
+                        //renderer.resize(&gpu, size);
+                        //gpu.configure_surface_target(&surface, size);
                         window.request_redraw();
                     }
                     WindowEvent::Focused(false) |
                     WindowEvent::KeyboardInput { device_id: _, event: KeyEvent {
                         physical_key: _, logical_key: Key::Named(NamedKey::Escape), text: _, location: _, state: _, repeat: _, ..
                     }, is_synthetic: _ }=> {
-                        window.set_cursor_grab(CursorGrabMode::None);
+                        let _ = window.set_cursor_grab(CursorGrabMode::None);
                         window.set_cursor_visible(true);
                         grabbed = false;
                     }
                     WindowEvent::MouseInput {device_id: _, state: ElementState::Pressed, button: MouseButton::Left } => {
                         if window.has_focus() {
-                            window.set_cursor_grab(CursorGrabMode::Confined);
+                            let _ = window.set_cursor_grab(CursorGrabMode::Confined);
                             window.set_cursor_visible(false);
                             grabbed = true;
                         }
                     }
-                    WindowEvent::RedrawRequested => {
-                        let now = Instant::now();
-                        camera.tick(now);
-                        match surface.get_current_texture() {
-                            Err(e) => {
-                                log::error!("get_current_texture: {}", e);
-                                size = window_size(&window);
-                                renderer.resize(&gpu, size);
-                                gpu.configure_surface_target(&surface, size);
-                                window.request_redraw();
-                            }
-                            Ok(frame) => {
-                                let out_view = frame.texture.create_view(&Default::default());
-                                renderer.render(&gpu, &out_view, &camera, &[
-                                    &terrain,
-                                ]);
-                                frame.present();
-                                window.request_redraw();
-                            }
-                        }
-                    }
                     WindowEvent::CloseRequested => target.exit(),
                     _ => {}
-                };
+                }
+                _ => {}
             }
-        })
-        .unwrap();
+        });
+        match loop_status {
+            PumpStatus::Continue => {},
+            PumpStatus::Exit(_) => break 'mainloop,
+        }
+        
+        if let Some(new_size) = must_resize {
+            drop(surface_result);
+            renderer.resize(&gpu, new_size);
+            gpu.configure_surface_target(&surface, new_size);
+            window.request_redraw();
+            continue
+        }
+        
+        let surface_tex = match surface_result {
+            Ok(t) => t,
+            Err(e) => {
+                log::error!("get_current_texture: {}", e);
+                size = window_size(&window);
+                renderer.resize(&gpu, size);
+                gpu.configure_surface_target(&surface, size);
+                window.request_redraw();
+                continue
+            }
+        };
+        let now = Instant::now();
+        camera.tick(now);
+
+        let out_view = surface_tex.texture.create_view(&Default::default());
+        renderer.render(&gpu, &out_view, &camera, &[
+            &terrain,
+        ]);
+        surface_tex.present();
+        //window.request_redraw();
+    }
 }
