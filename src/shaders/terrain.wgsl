@@ -115,7 +115,7 @@ fn terrain_albedo(uv: vec2f, z: f32, norm: vec3f, shore: f32) -> vec3f {
     out.normal = vec4f(0.5 * (norm + 1), 1.0);
     out.occlusion = 1.0;
     out.mat_type = MAT_SOLID;
-    out.depth_adj = v.refract_pos.z / v.world_pos.z;
+    out.depth_adj = v.world_pos.z / v.refract_pos.z;
     return out;
 }
 

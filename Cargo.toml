@@ -14,9 +14,10 @@ glam = {version="0.25.0", features=["bytemuck"] }
 image = {version = "0.24.8", default_features=false, features=["png", "hdr"] }
 log = "0.4.20"
 pollster = "0.3.0"
-wgpu = "0.19.1"
-winit = "0.29.10"
+wgpu = "0.19.3"
+winit = "0.29.12"
 rgbe = "0.0.1"
+half = "2.4.0"
 
 [profile.dev.package."*"]
 opt-level = 3

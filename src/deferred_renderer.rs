@@ -25,15 +25,17 @@ pub trait RenderObject {
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GlobalLighting {
     pub upper_ambient_color: Vec3,
-    pub pad1: f32,
+    pub pad0: f32,
     pub lower_ambient_color: Vec3,
-    pub pad2: f32,
+    pub pad1: f32,
     pub sun_color: Vec3,
-    pub pad3: f32,
+    pub pad2: f32,
     pub sun_dir: Vec3, // towards sun
-    pub pad4: f32,
+    pub pad3: f32,
     pub refr_sun_dir: Vec3,
     pub refr_sun_trans: f32,
+    pub water_lim_color: Vec3,
+    pub half_secci: f32,
 }
 
 impl GlobalLighting {
@@ -43,11 +45,14 @@ impl GlobalLighting {
         let cos_below = (1.0 - sin_above * sin_above / 1.7689).sqrt();
         let refr_sun_dir = vec3(norm_sun.x/1.33, norm_sun.y/1.33, cos_below);
         let refr_sun_trans = (norm_sun.z / cos_below) * 0.98 * (1.0 - (1.0 - norm_sun.z).powi(5));
+        let water_lim_color = vec3(0.03, 0.05, 0.1);
+        let half_secci = 20.0;
         GlobalLighting {
             upper_ambient_color, lower_ambient_color, sun_color,
             sun_dir: norm_sun,
             refr_sun_dir, refr_sun_trans,
-            pad1: 0.0, pad2: 0.0, pad3: 0.0, pad4: 0.0,
+            water_lim_color, half_secci,
+            pad0: 0.0, pad1: 0.0, pad2: 0.0, pad3: 0.0,
         }
     }
 }
@@ -122,7 +127,7 @@ impl DeferredRendererTextures {
         let (water_rough_metal, water_rm_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::Rg8Unorm, "water-rough-metal");
         let (water_ao, water_ao_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::R8Unorm, "water-ao");
         let (water_material, water_material_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::R8Uint, "water-material");
-        let (water_depth_adj, water_depth_adj_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::R8Unorm, "water-depth-adj");
+        let (water_depth_adj, water_depth_adj_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::R16Float, "water-depth-adj");
 
         Self {
             size, half_size,
@@ -183,7 +188,7 @@ impl DeferredRenderer {
 
         let main_camera_buf = gpu.device.create_buffer_init(&BufferInitDescriptor{
             label: Some("camera_buf"),
-            contents: bytemuck::bytes_of(&camera_ctrl.camera(output_size.as_vec2())),
+            contents: bytemuck::bytes_of(&camera_ctrl.camera(gbuffers.size.as_vec2(), gbuffers.half_size.as_vec2())),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
@@ -495,7 +500,7 @@ impl DeferredRenderer {
     pub fn render(&mut self, gpu: &GPUContext, out: &wgpu::TextureView, camera_ctrl: &CameraController, scene: &[&dyn RenderObject]) {
         let mut command_encoder = gpu.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("deferred_renderer") });
 
-        let camera = camera_ctrl.camera(self.gbuffers.size.as_vec2());
+        let camera = camera_ctrl.camera(self.gbuffers.size.as_vec2(), self.gbuffers.half_size.as_vec2());
         gpu.queue.write_buffer(&self.main_camera_buf, 0, bytemuck::bytes_of(&camera));
 
         {
@@ -648,7 +653,7 @@ impl DeferredRenderer {
         Some(ColorTargetState{ format: TextureFormat::Rg8Unorm, blend: None, write_mask: ColorWrites::ALL }),
         Some(ColorTargetState{ format: TextureFormat::R8Unorm, blend: None, write_mask: ColorWrites::ALL }),
         Some(ColorTargetState{ format: TextureFormat::R8Uint, blend: None, write_mask: ColorWrites::ALL }),
-        Some(ColorTargetState{ format: TextureFormat::R8Unorm, blend: None, write_mask: ColorWrites::ALL }),
+        Some(ColorTargetState{ format: TextureFormat::R16Float, blend: None, write_mask: ColorWrites::ALL }),
     ];
 }
 

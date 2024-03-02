@@ -13,6 +13,8 @@ struct GlobalLighting {
     sun_dir: vec3f, // towards sun
     refr_sun_dir: vec3f,
     refr_sun_trans: f32,
+    water_lim_color: vec3f,
+    half_secci: f32,
 }
 
 @group(2) @binding(0) var<uniform> sun : GlobalLighting;
@@ -97,10 +99,26 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     if material == MAT_SKY {
         return vec4f(0.5, 0.5, 0.5, 1.0);
     }
+
+    let clip_xy = ((pos.xy / camera.water_fb_size) - 0.5)  * vec2f(2, -2);
+    let dist_val = textureLoad(dist_buf, px, 0);
+    let clip_w = camera.clip_near / dist_val;
+    let clip_pos = vec4f(clip_xy * clip_w, camera.clip_near, clip_w);
+    var world_pos = (camera.inv_matrix * clip_pos).xyz;
+    let depth_adj = textureLoad(depth_adj_buf, px, 0).x;
+    let look_dir_above = normalize(world_pos - camera.eye);
+    world_pos.z *= depth_adj;
+    let look_dir_below = normalize(world_pos - camera.eye);
+
+    let amb_falloff = exp(world_pos.z / sun.half_secci);
+    let sun_falloff = exp(world_pos.z / (sun.refr_sun_dir.z * sun.half_secci));
+    let look_falloff = exp(world_pos.z / (-look_dir_below.z * sun.half_secci));
+
     let albedo = textureLoad(albedo_buf, px, 0).xyz;
     let normal = 2 * textureLoad(normal_buf, px, 0).xyz - 1;
-    let ambient = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
-    let direct = sun.sun_color * sun.refr_sun_trans * max(0.0, dot(normal, sun.refr_sun_dir));
-    return vec4f(albedo * (ambient + direct), 1);
+    let ambient = amb_falloff * mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
+    let direct = sun_falloff * sun.sun_color * sun.refr_sun_trans * max(0.0, dot(normal, sun.refr_sun_dir));
+    let color = albedo * (ambient + direct);
+    return vec4f(mix(sun.water_lim_color, color, look_falloff), 1);
 }
 

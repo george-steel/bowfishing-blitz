@@ -7,6 +7,7 @@ struct Camera {
     eye: vec3f,
     clip_near: f32,
     fb_size: vec2f,
+    water_fb_size: vec2f,
     time: f32,
 }
 
@@ -33,7 +34,7 @@ struct UnderwaterPoint {
     @location(2) rough_metal: vec2f, //rg8-unorm metal channel is mode-dependant
     @location(3) occlusion: f32, //r8-unorm, collects micro-occlusion from textures and then multiplied with SSAO.
     @location(4) mat_type: u32, //r8-uint
-    @location(5) depth_adj: f32, //r8-unorm, refracted vertical depth/worldspace depth
+    @location(5) depth_adj: f32, //r16-float, refracted vertical depth/worldspace depth
     // depth buffer uses reverse z based on apparant distance according to horizontal parallax.
 }
 

@@ -51,7 +51,7 @@ impl GPUContext {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: self.output_format,
-            present_mode: wgpu::PresentMode::AutoNoVsync,
+            present_mode: wgpu::PresentMode::Fifo,
             ..surface.get_default_config(&self.adapter, size.x.max(1), size.y.max(1)).unwrap()
         };
         surface.configure(&self.device, &surface_config);
