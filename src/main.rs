@@ -7,7 +7,11 @@ use std::time::{Duration, Instant};
 
 use glam::*;
 use winit::{
-    event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent}, event_loop::EventLoop, keyboard::{Key, NamedKey}, platform::pump_events::{EventLoopExtPumpEvents, PumpStatus}, window::{CursorGrabMode, Window}
+    event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
+    event_loop::EventLoop,
+    keyboard::{Key, NamedKey},
+    platform::pump_events::{EventLoopExtPumpEvents, PumpStatus},
+    window::{CursorGrabMode, Window}
 };
 
 fn main() {
@@ -28,7 +32,7 @@ fn main() {
 
     let init_time = Instant::now();
     //let ft = fragtex::FragDisplay::new(&gctx);
-    let mut camera = CameraController::new(CameraSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
+    let mut camera = FreeCam::new(CameraSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
     let mut renderer = DeferredRenderer::new(&gpu, &camera, size);
 
     let mut terrain = terrain_view::TerrainView::new(&gpu, &renderer);

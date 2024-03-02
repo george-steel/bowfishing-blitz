@@ -3,6 +3,7 @@ use winit::{event::ElementState, keyboard::{KeyCode, PhysicalKey::{self, *}}};
 
 use glam::f32::*;
 
+// Camera data for GPU use.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Camera {
@@ -15,6 +16,11 @@ pub struct Camera {
     pub time_s: f32,
     pub pad: Vec3,
 }
+
+pub trait CameraController {
+    fn camera(&self, fb_size: Vec2, water_fb_size: Vec2) -> Camera;
+}
+
 
 #[derive(Copy, Clone, Debug)]
 pub struct CameraSettings {
@@ -106,7 +112,7 @@ impl CameraInputAccum {
 }
 
 #[derive(Clone, Debug)]
-pub struct CameraController {
+pub struct FreeCam {
     pub settings: CameraSettings,
     pub eye: Vec3,
     pub yaw: f32, // radians, 0 is towards +X
@@ -116,11 +122,11 @@ pub struct CameraController {
     accum: CameraInputAccum,
 }
 
-impl CameraController {
+impl FreeCam {
     pub const MAX_PITCH: f32 = 88.0;
 
     pub fn new(settings: CameraSettings, eye: Vec3, yaw: f32, now: Instant) -> Self {
-        CameraController {
+        FreeCam {
             settings, eye, yaw,
             pitch: 0.0,
             created_at: now,
@@ -132,23 +138,6 @@ impl CameraController {
         let yaw_rad = self.yaw.to_radians();
         let pitch_rad = self.pitch.to_radians();
         Vec3::new(pitch_rad.cos() * yaw_rad.cos(), pitch_rad.cos() * yaw_rad.sin(), pitch_rad.sin())
-    }
-    pub fn camera(&self, fb_size: Vec2, water_fb_size: Vec2) -> Camera {
-        let aspect_ratio = fb_size.x / fb_size.y;
-        let mat = Mat4::perspective_infinite_reverse_rh(self.settings.fov_y.to_radians(), aspect_ratio, self.settings.clip_near,)
-            * Mat4::look_to_rh(self.eye, self.look_dir(), Vec3::new(0.0, 0.0, 1.0));
-        if mat.determinant() == 0.0 {
-            panic!("Singular camera matrix: {:?}", mat);
-        }
-        Camera {
-            matrix: mat,
-            inv_matrix: mat.inverse(),
-            eye: self.eye,
-            clip_near: self.settings.clip_near,
-            fb_size, water_fb_size,
-            time_s: (self.updated_at - self.created_at).as_secs_f32(),
-            pad: Vec3::ZERO,
-        }
     }
 
     pub fn tick(&mut self, now: Instant) {
@@ -177,5 +166,25 @@ impl CameraController {
     }
     pub fn mouse(&mut self, dx: f64, dy: f64) {
         self.accum.mouse(dx, dy);
+    }
+}
+
+impl CameraController for FreeCam {
+    fn camera(&self, fb_size: Vec2, water_fb_size: Vec2) -> Camera {
+        let aspect_ratio = fb_size.x / fb_size.y;
+        let mat = Mat4::perspective_infinite_reverse_rh(self.settings.fov_y.to_radians(), aspect_ratio, self.settings.clip_near,)
+            * Mat4::look_to_rh(self.eye, self.look_dir(), Vec3::new(0.0, 0.0, 1.0));
+        if mat.determinant() == 0.0 {
+            panic!("Singular camera matrix: {:?}", mat);
+        }
+        Camera {
+            matrix: mat,
+            inv_matrix: mat.inverse(),
+            eye: self.eye,
+            clip_near: self.settings.clip_near,
+            fb_size, water_fb_size,
+            time_s: (self.updated_at - self.created_at).as_secs_f32(),
+            pad: Vec3::ZERO,
+        }
     }
 }

@@ -166,7 +166,7 @@ pub struct DeferredRenderer {
 }
 
 impl DeferredRenderer {
-    pub fn new(gpu: &GPUContext, camera_ctrl: &CameraController, output_size: UVec2) -> Box<Self> {
+    pub fn new(gpu: &GPUContext, camera_ctrl: &FreeCam, output_size: UVec2) -> Box<Self> {
         let lighting_shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
             label: Some("lighting.wgsl"),
             source: ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::lighting)),
@@ -497,11 +497,15 @@ impl DeferredRenderer {
         });
     }
 
-    pub fn render(&mut self, gpu: &GPUContext, out: &wgpu::TextureView, camera_ctrl: &CameraController, scene: &[&dyn RenderObject]) {
+    pub fn render(&mut self, gpu: &GPUContext, out: &wgpu::TextureView, camera_ctrl: &impl CameraController, scene: &[&dyn RenderObject]) {
         let mut command_encoder = gpu.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("deferred_renderer") });
 
         let camera = camera_ctrl.camera(self.gbuffers.size.as_vec2(), self.gbuffers.half_size.as_vec2());
         gpu.queue.write_buffer(&self.main_camera_buf, 0, bytemuck::bytes_of(&camera));
+
+        for obj in scene.iter().copied() {
+            obj.prepass(gpu, &self, &mut command_encoder);
+        }
 
         {
             let mut underwater_pass = command_encoder.begin_render_pass(&RenderPassDescriptor{
