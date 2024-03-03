@@ -66,7 +66,7 @@ impl TerrainView {
         });
         let shader = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor{
             label: Some("terrain.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::terrain)),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::TERRAIN)),
         });
         let terrain_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,

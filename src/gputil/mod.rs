@@ -2,7 +2,10 @@ use std::{fs::File, path::Path};
 
 use image::{ImageDecoder, ImageError, ImageResult};
 use winit::{dpi::PhysicalSize, window::Window};
+use bytemuck::{Pod, Zeroable};
 use glam::*;
+
+pub mod mip;
 
 pub struct GPUContext {
     pub instance: wgpu::Instance,
@@ -79,7 +82,7 @@ impl GPUContext {
     }
 
     pub fn load_r16f_texture(&self, path: &Path) -> ImageResult<wgpu::Texture> {
-        let (width, height, data) = load_png16(path)?;
+        let (width, height, data) = load_png::<u16>(path)?;
         let size = wgpu::Extent3d{width, height, depth_or_array_layers: 1};
         let tex = self.device.create_texture(&wgpu::TextureDescriptor{
                 label: path.to_str(),
@@ -132,22 +135,12 @@ pub fn extent_2d(size: UVec2) -> wgpu::Extent3d {
     wgpu::Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1}
 }
 
-pub fn load_png16(path: &Path) -> ImageResult<(u32, u32, Box<[u16]>)> {
+pub fn load_png<P: Pod + Zeroable>(path: &Path) -> ImageResult<(u32, u32, Box<[P]>)> {
     let file = File::open(path).map_err(ImageError::IoError)?;
     let decoder = image::codecs::png::PngDecoder::new(file)?;
     let (width, height) = decoder.dimensions();
     let size = (width * height) as usize;
-    let mut out = bytemuck::allocation::zeroed_slice_box::<u16>(size);
-    decoder.read_image(bytemuck::cast_slice_mut(&mut out))?;
-    Ok((width, height, out))
-}
-
-pub fn load_png32(path: &Path) -> ImageResult<(u32, u32, Box<[u32]>)> {
-    let file = File::open(path).map_err(ImageError::IoError)?;
-    let decoder = image::codecs::png::PngDecoder::new(file)?;
-    let (width, height) = decoder.dimensions();
-    let size = (width * height) as usize;
-    let mut out = bytemuck::allocation::zeroed_slice_box::<u32>(size);
+    let mut out = bytemuck::allocation::zeroed_slice_box::<P>(size);
     decoder.read_image(bytemuck::cast_slice_mut(&mut out))?;
     Ok((width, height, out))
 }

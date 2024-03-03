@@ -1,16 +1,17 @@
-
-pub const lighting: &str = concat!(
+pub const LIGHTING: &str = concat!(
     include_str!("global.wgsl"),
     include_str!("lighting.wgsl"),
 );
 
-pub const terrain: &str = concat!(
+pub const TERRAIN: &str = concat!(
     include_str!("global.wgsl"),
     include_str!("noise.wgsl"),
     include_str!("terrain.wgsl"),
 );
 
-pub const terrain_map: &str = concat!(
+pub const TERRAIN_MAP: &str = concat!(
     include_str!("noise.wgsl"),
     include_str!("terrain_map.wgsl"),
 );
+
+pub const MIP: &str = include_str!("mip.wgsl");
