@@ -85,6 +85,9 @@ fn terrain_albedo(uv: vec2f, z: f32, norm: vec3f, shore: f32) -> vec3f {
 }
 
 @fragment fn terrain_frag(v: TerrainVertexOut) -> GBufferPoint {
+    if v.world_pos.z <  -0.1 {
+        discard; // skip texturing above water
+    }
     let grad = terrain_grad(v.uv);
     let norm = normalize(vec3f(-grad, 1));
 

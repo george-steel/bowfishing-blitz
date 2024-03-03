@@ -23,7 +23,13 @@ fn main() {
     let window = winit::window::WindowBuilder::new().build(&event_loop).unwrap();
     let surface = wgpu_inst.create_surface(&window).unwrap();
     
-    let gpu = pollster::block_on(GPUContext::with_default_limits(wgpu_inst, Some(&surface)));
+    let gpu = pollster::block_on(GPUContext::with_default_limits(
+        wgpu_inst,
+        Some(&surface),
+        wgpu::Features::MAPPABLE_PRIMARY_BUFFERS
+    ));
+    let limits = gpu.adapter.limits();
+    //log::info!("Limits: {:#?}", &limits);
     
     let mut size = window_size(&window);
     gpu.configure_surface_target(&surface, size);
@@ -31,7 +37,7 @@ fn main() {
     let init_time = Instant::now();
     let window = &window;
     let map_disp = map_display::FragDisplay::new(&gpu);
-    map_disp.bake_height(&gpu, 2048, "./assets/staging/terrain_heightmap.png");
+    map_disp.bake_height(&gpu, 2048, "./assets/staging/terrain_heightmap");
     event_loop
         .run(move |event, target| {
             // Have the closure take ownership of the resources.

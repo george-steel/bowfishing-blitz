@@ -14,7 +14,7 @@ pub struct GPUContext {
 
 
 impl GPUContext {
-    pub async fn with_default_limits(instance: wgpu::Instance, for_surface: Option<&wgpu::Surface<'_>>) -> Self {
+    pub async fn with_default_limits(instance: wgpu::Instance, for_surface: Option<&wgpu::Surface<'_>>, features: wgpu::Features) -> Self {
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions{
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: for_surface,
@@ -25,7 +25,7 @@ impl GPUContext {
 
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             label: None,
-            required_features: wgpu::Features::RG11B10UFLOAT_RENDERABLE,
+            required_features: features,
             required_limits: wgpu::Limits::default(),
         }, None)
         .await

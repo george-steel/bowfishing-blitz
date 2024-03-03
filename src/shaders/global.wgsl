@@ -18,6 +18,7 @@ const MAT_SKY: u32 = 0; // cleared value;
 const MAT_SOLID: u32 = 1; // general Cook-Torrance
 const MAT_WATER: u32 = 2; // albedo is transmitted value
 const MAT_LEAF: u32 = 3; // semi-translucent
+const MAT_EMIT: u32 = 4; // emissive material. Albedo = final color
 
 
 struct GBufferPoint {

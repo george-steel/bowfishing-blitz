@@ -25,7 +25,11 @@ fn main() {
             .build(&event_loop).unwrap();
     let surface = wgpu_inst.create_surface(&window).unwrap();
     
-    let gpu = pollster::block_on(GPUContext::with_default_limits(wgpu_inst, Some(&surface)));
+    let gpu = pollster::block_on(GPUContext::with_default_limits(
+        wgpu_inst,
+        Some(&surface),
+        wgpu::Features::RG11B10UFLOAT_RENDERABLE,
+    ));
     
     let mut size = window_size(&window);
     gpu.configure_surface_target(&surface, size);
@@ -82,15 +86,21 @@ fn main() {
                             grabbed = true;
                         }
                     }
-                    WindowEvent::CloseRequested => target.exit(),
+                    WindowEvent::CloseRequested => {
+                        log::info!("CLOSE REQUESTED");
+                        target.exit();
+                    }
                     _ => {}
                 }
                 _ => {}
             }
         });
         match loop_status {
-            PumpStatus::Continue => {},
-            PumpStatus::Exit(_) => break 'mainloop,
+            PumpStatus::Continue => {}
+            PumpStatus::Exit(_) => {
+                log::info!("EXITING");
+                break 'mainloop
+            }
         }
         
         if let Some(new_size) = must_resize {

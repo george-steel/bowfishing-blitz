@@ -186,11 +186,11 @@ impl RenderObject for TerrainView {
 
     fn draw_opaque<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut wgpu::RenderPass<'a>) {
         pass.set_bind_group(1, &self.terrain_bind_group, &[]);
+        
+        pass.set_pipeline(&self.terrain_pipeline);
+        pass.draw(0..(2 * self.params.grid_size + 2), 0..(self.params.grid_size));
 
         pass.set_pipeline(&self.water_pipeline);
         pass.draw(0..4, 0..1);
-
-        pass.set_pipeline(&self.terrain_pipeline);
-        pass.draw(0..(2 * self.params.grid_size + 2), 0..(self.params.grid_size));
     }
 }
