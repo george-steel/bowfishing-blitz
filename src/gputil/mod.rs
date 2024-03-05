@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path};
+use std::{fs::File, mem::size_of, path::Path};
 
 use image::{ImageDecoder, ImageError, ImageResult};
 use winit::{dpi::PhysicalSize, window::Window};
@@ -62,44 +62,39 @@ impl GPUContext {
 
     pub fn load_rgbe8_texture(&self, path: &Path) -> ImageResult<wgpu::Texture> {
         let (width, height, data) = rgbe::load_rgbe8_png_file_as_rgb9e5(path)?;
-        let size = wgpu::Extent3d{width, height, depth_or_array_layers: 1};
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor{
-                label: path.to_str(),
-                dimension: wgpu::TextureDimension::D2,
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                format: wgpu::TextureFormat::Rgb9e5Ufloat,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-        });
-        self.queue.write_texture(wgpu::ImageCopyTexture{
-            texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All
-        }, bytemuck::cast_slice(&data), wgpu::ImageDataLayout{
-            offset: 0, bytes_per_row: Some(4 * width), rows_per_image: Some(height),
-        }, size);
+        let img = PlanarImage {width: width as usize, height: height as usize, data};
+        let tex = self.upload_2d_texture(path.to_str().unwrap(), wgpu::TextureFormat::Rgb9e5Ufloat, &img);
         Ok(tex)
     }
 
     pub fn load_r16f_texture(&self, path: &Path) -> ImageResult<wgpu::Texture> {
-        let (width, height, data) = load_png::<u16>(path)?;
-        let size = wgpu::Extent3d{width, height, depth_or_array_layers: 1};
-        let tex = self.device.create_texture(&wgpu::TextureDescriptor{
-                label: path.to_str(),
-                dimension: wgpu::TextureDimension::D2,
-                size,
-                mip_level_count: 1,
-                sample_count: 1,
-                format: wgpu::TextureFormat::R16Float,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
-        });
-        self.queue.write_texture(wgpu::ImageCopyTexture{
-            texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All
-        }, bytemuck::cast_slice(&data), wgpu::ImageDataLayout{
-            offset: 0, bytes_per_row: Some(2 * width), rows_per_image: Some(height),
-        }, size);
+        let img = load_png::<u16>(path)?;
+        let tex = self.upload_2d_texture(path.to_str().unwrap(), wgpu::TextureFormat::R16Float, &img);
         Ok(tex)
+    }
+
+    pub fn upload_2d_texture<Texel: bytemuck::Pod>(&self, label: &str, format: wgpu::TextureFormat, img: &PlanarImage<Texel>) -> wgpu::Texture {
+        let texel_size = std::mem::size_of::<Texel>();
+        if texel_size != format.block_copy_size(None).unwrap() as usize {
+            panic!("texture format must have the same size as the data buffer element")
+        }
+
+        let size = wgpu::Extent3d{width: img.width as u32, height: img.height as u32, depth_or_array_layers: 1};
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor{
+            label: Some(label),
+            dimension: wgpu::TextureDimension::D2,
+            size, format,
+            mip_level_count: 1,
+            sample_count: 1,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture{texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
+            bytemuck::cast_slice(&img.data),
+            wgpu::ImageDataLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(img.height as u32)},
+            size);
+        tex
     }
 
     pub fn create_empty_texture(&self, size: wgpu::Extent3d, format: wgpu::TextureFormat, label: &'static str) -> (wgpu::Texture, wgpu::TextureView) {
@@ -135,12 +130,58 @@ pub fn extent_2d(size: UVec2) -> wgpu::Extent3d {
     wgpu::Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1}
 }
 
-pub fn load_png<P: Pod + Zeroable>(path: &Path) -> ImageResult<(u32, u32, Box<[P]>)> {
+#[derive(Clone, Debug)]
+pub struct PlanarImage<P> {
+    pub width: usize,
+    pub height: usize,
+    pub data: Box<[P]>,
+}
+
+impl<P: Copy> PlanarImage<P> {
+    pub fn pixel_at(&self, pos: UVec2) -> P {
+        let x = pos.x as usize;
+        let y = pos.y as usize;
+        self.data[self.width * y + x]
+    }
+
+    pub fn sample_nearest(&self, uv: Vec2, wrap_x: bool, wrap_y: bool) -> P {
+        let dim = vec2(self.width as f32, self.height as f32);
+        let px = (uv * dim).floor().as_ivec2();
+        self.pixel_at(self.wrap_or_clamp(px, wrap_x, wrap_y))
+    }
+
+    pub fn wrap_or_clamp(&self, pos: IVec2, wrap_x: bool, wrap_y: bool) -> UVec2 {
+        let wrapped = pos.rem_euclid(ivec2(self.width as i32, self.height as i32));
+        let clamped = pos.clamp(IVec2::ZERO, ivec2(self.width as i32 - 1, self.height as i32 - 1));
+        let x = if wrap_x {wrapped.x} else {clamped.x};
+        let y = if wrap_y {wrapped.y} else {clamped.y};
+        uvec2(x as u32, y as u32)
+    }
+}
+
+impl<P: Copy + Into<f32>> PlanarImage<P> {
+    pub fn sample_bilinear_f32(&self, uv: Vec2, wrap_x: bool, wrap_y: bool) -> f32 {
+        let dim = vec2(self.width as f32, self.height as f32);
+        let px = (uv * dim - 0.5).floor().as_ivec2();
+        let cell_uv = (uv * dim - 0.5).fract();
+
+        let nw = self.pixel_at(self.wrap_or_clamp(px, wrap_x, wrap_y)).into();
+        let sw = self.pixel_at(self.wrap_or_clamp(px + ivec2(0, 1), wrap_x, wrap_y)).into();
+        let ne = self.pixel_at(self.wrap_or_clamp(px + ivec2(1, 0), wrap_x, wrap_y)).into();
+        let se = self.pixel_at(self.wrap_or_clamp(px + ivec2(1, 1), wrap_x, wrap_y)).into();
+        
+        let n = f32::lerp(nw, ne, cell_uv.x);
+        let s = f32::lerp(sw, se, cell_uv.x);
+        f32::lerp(n, s, cell_uv.y)
+    }
+}
+
+pub fn load_png<P: Pod + Zeroable>(path: &Path) -> ImageResult<PlanarImage<P>> {
     let file = File::open(path).map_err(ImageError::IoError)?;
     let decoder = image::codecs::png::PngDecoder::new(file)?;
     let (width, height) = decoder.dimensions();
     let size = (width * height) as usize;
     let mut out = bytemuck::allocation::zeroed_slice_box::<P>(size);
     decoder.read_image(bytemuck::cast_slice_mut(&mut out))?;
-    Ok((width, height, out))
+    Ok(PlanarImage{ width: width as usize, height: height as usize, data: out})
 }

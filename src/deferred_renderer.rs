@@ -7,7 +7,7 @@ use std::{borrow::Cow, path::Path};
 
 pub trait RenderObject {
     // To update biffers or run compute shaders
-    fn prepass(&self, gpu: &GPUContext, renderer: &DeferredRenderer, encoder: &mut CommandEncoder) {}
+    fn prepass(&mut self, gpu: &GPUContext, renderer: &DeferredRenderer, encoder: &mut CommandEncoder) {}
 
     //fn draw_shadow_casters(&self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass, shadow_camera: &Camera) {}
 
@@ -46,7 +46,7 @@ impl GlobalLighting {
         let refr_sun_dir = vec3(norm_sun.x/1.33, norm_sun.y/1.33, cos_below);
         let refr_sun_trans = (norm_sun.z / cos_below) * 0.98 * (1.0 - (1.0 - norm_sun.z).powi(5));
         let water_lim_color = vec3(0.03, 0.05, 0.1);
-        let half_secci = 20.0;
+        let half_secci = 15.0;
         GlobalLighting {
             upper_ambient_color, lower_ambient_color, sun_color,
             sun_dir: norm_sun,
@@ -497,13 +497,13 @@ impl DeferredRenderer {
         });
     }
 
-    pub fn render(&mut self, gpu: &GPUContext, out: &wgpu::TextureView, camera_ctrl: &impl CameraController, scene: &[&dyn RenderObject]) {
+    pub fn render(&mut self, gpu: &GPUContext, out: &wgpu::TextureView, camera_ctrl: &impl CameraController, scene: &mut[&mut dyn RenderObject]) {
         let mut command_encoder = gpu.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("deferred_renderer") });
 
         let camera = camera_ctrl.camera(self.gbuffers.size.as_vec2(), self.gbuffers.half_size.as_vec2());
         gpu.queue.write_buffer(&self.main_camera_buf, 0, bytemuck::bytes_of(&camera));
 
-        for obj in scene.iter().copied() {
+        for obj in scene.iter_mut() {
             obj.prepass(gpu, &self, &mut command_encoder);
         }
 
@@ -553,7 +553,7 @@ impl DeferredRenderer {
 
             underwater_pass.set_bind_group(0, &self.global_bind_group, &[]);
 
-            for obj in scene.iter().copied() {
+            for obj in scene.iter() {
                 obj.draw_underwater(gpu, &self, &mut underwater_pass);
             }
         }
@@ -617,7 +617,7 @@ impl DeferredRenderer {
 
             opaque_pass.set_bind_group(0, &self.global_bind_group, &[]);
 
-            for obj in scene.iter().copied() {
+            for obj in scene.iter() {
                 obj.draw_opaque(gpu, &self, &mut opaque_pass);
             }
         }

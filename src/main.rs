@@ -1,4 +1,4 @@
-use bowfishing_blitz::*;
+use bowfishing_blitz::{arrows::ArrowController, *};
 use gputil::*;
 use camera::*;
 use deferred_renderer::*;
@@ -39,13 +39,16 @@ fn main() {
     let mut camera = FreeCam::new(CameraSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
     let mut renderer = DeferredRenderer::new(&gpu, &camera, size);
 
-    let mut terrain = terrain_view::TerrainView::new(&gpu, &renderer);
+    let land = terrain::HeightmapTerrain::load();
+    let mut terrain_view = terrain::TerrainView::new(&gpu, &renderer, &land);
+
+    let mut arrows = ArrowController::new(&gpu, &renderer, init_time);
 
     let mut grabbed = false;
     let window = &window;
     'mainloop: loop{
         let surface_result = surface.get_current_texture();
-        log::info!("FRAME ------------------------------------------------------");
+        //log::info!("FRAME ------------------------------------------------------");
 
         let mut must_resize: Option<UVec2> = None;
         let loop_status = event_loop.pump_events(Some(Duration::ZERO),  |event, target| {
@@ -58,7 +61,7 @@ fn main() {
                     }
                     DeviceEvent::MouseMotion { delta: (dx, dy) } => {
                         if window.has_focus() && grabbed {
-                            log::info!("mouse {} {}", dx, dy);
+                            //log::info!("mouse {} {}", dx, dy);
                             camera.mouse(dx, dy);
                         }
                     }
@@ -81,9 +84,14 @@ fn main() {
                     }
                     WindowEvent::MouseInput {device_id: _, state: ElementState::Pressed, button: MouseButton::Left } => {
                         if window.has_focus() {
-                            let _ = window.set_cursor_grab(CursorGrabMode::Confined);
-                            window.set_cursor_visible(false);
-                            grabbed = true;
+                            if grabbed {
+                                log::info!("SHOOT");
+                                arrows.shoot(&camera);
+                            } else {
+                                let _ = window.set_cursor_grab(CursorGrabMode::Confined);
+                                window.set_cursor_visible(false);
+                                grabbed = true;
+                            }
                         }
                     }
                     WindowEvent::CloseRequested => {
@@ -124,10 +132,12 @@ fn main() {
         };
         let now = Instant::now();
         camera.tick(now);
+        arrows.tick(now, &land, &mut []);
 
         let out_view = surface_tex.texture.create_view(&Default::default());
-        renderer.render(&gpu, &out_view, &camera, &[
-            &terrain,
+        renderer.render(&gpu, &out_view, &camera, &mut [
+            &mut terrain_view,
+            &mut arrows,
         ]);
         surface_tex.present();
         //window.request_redraw();

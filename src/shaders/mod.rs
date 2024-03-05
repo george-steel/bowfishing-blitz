@@ -15,3 +15,8 @@ pub const TERRAIN_MAP: &str = concat!(
 );
 
 pub const MIP: &str = include_str!("mip.wgsl");
+
+pub const ARROWS: &str = concat!(
+    include_str!("global.wgsl"),
+    include_str!("arrows.wgsl"),
+);

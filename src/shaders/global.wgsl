@@ -60,3 +60,7 @@ fn apparent_depth(dist: f32, eye_height: f32, depth: f32) -> f32 {
     return depth / ratio;
 }
 
+fn refracted_z(world_pos: vec3f) -> f32 {
+    let cam_dist = length(world_pos.xy - camera.eye.xy);
+    return apparent_depth(cam_dist, camera.eye.z, world_pos.z);
+}

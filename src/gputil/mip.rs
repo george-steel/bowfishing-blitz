@@ -4,6 +4,8 @@ use crate::shaders;
 use wgpu::*;
 use glam::*;
 use std::borrow::Cow;
+use std::sync::Once;
+use std::sync::OnceLock;
 use half::f16;
 
 // structure used for collision with heightmaps,
@@ -42,7 +44,7 @@ pub struct MipMaker {
 }
 
 impl MipMaker {
-    pub fn new(gpu: &GPUContext) -> Self {
+    fn new(gpu: &GPUContext) -> Self {
         let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
             label: Some("mip.wgsl"),
             source: ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::MIP)),
@@ -51,7 +53,12 @@ impl MipMaker {
         Self {shaders}
     }
 
-    pub fn bake_range_mips(&self, gpu: &GPUContext, input_texture: Texture) -> BakedRangeMips {
+    pub fn get(gpu: &GPUContext) -> &'static Self {
+        static INST: OnceLock<MipMaker> = OnceLock::new();
+        INST.get_or_init(||{Self::new(gpu)})
+    }
+
+    pub fn bake_range_mips(&self, gpu: &GPUContext, input_texture: &Texture) -> BakedRangeMips {
         let tex_dims = input_texture.size();
         if tex_dims.width != tex_dims.height {
             panic!("texture must be square");

@@ -1,13 +1,38 @@
 use crate::deferred_renderer::DeferredRenderer;
 use crate::deferred_renderer::RenderObject;
-use crate::gputil::*;
+use crate::gputil::{*, mip::*};
 use crate::camera::*;
 use glam::f32::*;
+use half::f16;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
-use wgpu::{BindGroupEntry, BlendComponent, BufferUsages, ShaderStages};
+use wgpu::*;
 use std::borrow::Cow;
 use std::{default::Default, slice, path::Path};
 
+
+pub struct HeightmapTerrain {
+    pub radius: f32,
+    pub z_scale: f32,
+    pub heightmap: PlanarImage<f16>,
+}
+
+impl HeightmapTerrain {
+    pub fn load() -> Self {
+        let radius = 60.0;
+        let z_scale = 1.0;
+        let heightmap = load_png::<f16>(Path::new("./assets/terrain_heightmap.png")).expect("Failed to load terrain");
+        HeightmapTerrain { radius, z_scale, heightmap}
+    }
+
+    pub fn height_at(&self, xy: Vec2) -> Option<f32> {
+        if xy.x.abs() > self.radius || xy.y.abs() > self.radius {
+            None
+        } else {
+            let uv = xy * vec2(1.0, -1.0) / self.radius / 2.0 + 0.5;
+            Some(self.z_scale * self.heightmap.sample_bilinear_f32(uv, false, false))
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -27,7 +52,7 @@ pub struct TerrainView {
 }
 
 impl TerrainView {
-    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer) -> Self {
+    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer, terrain: &HeightmapTerrain) -> Self {
         let bg_layout = gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor{
             label: Some("Terrain Uniforms"),
             entries: &[
@@ -129,7 +154,7 @@ impl TerrainView {
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleStrip,
-                cull_mode: Some(wgpu::Face::Back),
+                //cull_mode: Some(wgpu::Face::Back),
                 ..wgpu::PrimitiveState::default()
             },
             depth_stencil: reverse_z(),
@@ -137,7 +162,7 @@ impl TerrainView {
             multiview: None,
         });
 
-        let height_tex = gpu.load_r16f_texture(Path::new("./assets/terrain_heightmap.png")).expect("Failed to load terrain");
+        let height_tex = gpu.upload_2d_texture("terrain_heightmap", TextureFormat::R16Float, &terrain.heightmap);
         let height_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             min_filter: wgpu::FilterMode::Linear,
             mag_filter: wgpu::FilterMode::Linear,
@@ -148,8 +173,8 @@ impl TerrainView {
         let height_tex_view = height_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
         let params = TerrainParams{
-            radius: 60.0,
-            z_scale: 1.0,
+            radius: terrain.radius,
+            z_scale: terrain.z_scale,
             grid_size: 360,
         };
 

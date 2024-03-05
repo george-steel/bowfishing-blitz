@@ -19,6 +19,8 @@ pub struct Camera {
 
 pub trait CameraController {
     fn camera(&self, fb_size: Vec2, water_fb_size: Vec2) -> Camera;
+    fn eye(&self) -> Vec3;
+    fn look_dir(&self) -> Vec3;
 }
 
 
@@ -114,7 +116,7 @@ impl CameraInputAccum {
 #[derive(Clone, Debug)]
 pub struct FreeCam {
     pub settings: CameraSettings,
-    pub eye: Vec3,
+    pub eye_pos: Vec3,
     pub yaw: f32, // radians, 0 is towards +X
     pub pitch: f32, // radians, 0 is horizontal
     pub created_at: Instant,
@@ -127,17 +129,12 @@ impl FreeCam {
 
     pub fn new(settings: CameraSettings, eye: Vec3, yaw: f32, now: Instant) -> Self {
         FreeCam {
-            settings, eye, yaw,
+            settings, eye_pos: eye, yaw,
             pitch: 0.0,
             created_at: now,
             updated_at: now,
             accum: CameraInputAccum::new(),
         }
-    }
-    pub fn look_dir(&self) -> Vec3 {
-        let yaw_rad = self.yaw.to_radians();
-        let pitch_rad = self.pitch.to_radians();
-        Vec3::new(pitch_rad.cos() * yaw_rad.cos(), pitch_rad.cos() * yaw_rad.sin(), pitch_rad.sin())
     }
 
     pub fn tick(&mut self, now: Instant) {
@@ -153,7 +150,7 @@ impl FreeCam {
             self.accum.vel_long() * long_dir +
             self.accum.vel_trans() * trans_dir +
             self.accum.vel_vert() * vert_dir;
-        self.eye += dt.as_secs_f32() * self.settings.lin_speed * vel;
+        self.eye_pos += dt.as_secs_f32() * self.settings.lin_speed * vel;
 
         let (dx, dy) = self.accum.take_rot();
 
@@ -173,18 +170,28 @@ impl CameraController for FreeCam {
     fn camera(&self, fb_size: Vec2, water_fb_size: Vec2) -> Camera {
         let aspect_ratio = fb_size.x / fb_size.y;
         let mat = Mat4::perspective_infinite_reverse_rh(self.settings.fov_y.to_radians(), aspect_ratio, self.settings.clip_near,)
-            * Mat4::look_to_rh(self.eye, self.look_dir(), Vec3::new(0.0, 0.0, 1.0));
+            * Mat4::look_to_rh(self.eye_pos, self.look_dir(), Vec3::new(0.0, 0.0, 1.0));
         if mat.determinant() == 0.0 {
             panic!("Singular camera matrix: {:?}", mat);
         }
         Camera {
             matrix: mat,
             inv_matrix: mat.inverse(),
-            eye: self.eye,
+            eye: self.eye_pos,
             clip_near: self.settings.clip_near,
             fb_size, water_fb_size,
             time_s: (self.updated_at - self.created_at).as_secs_f32(),
             pad: Vec3::ZERO,
         }
+    }
+
+    fn eye(&self) -> Vec3 {
+        self.eye_pos
+    }
+
+    fn look_dir(&self) -> Vec3 {
+        let yaw_rad = self.yaw.to_radians();
+        let pitch_rad = self.pitch.to_radians();
+        Vec3::new(pitch_rad.cos() * yaw_rad.cos(), pitch_rad.cos() * yaw_rad.sin(), pitch_rad.sin())
     }
 }

@@ -182,8 +182,8 @@ impl FragDisplay {
         height_img.save(format!("{}.r16f.png", path)).unwrap();
         log::info!("saved height buffer as PNG");
 
-        let mip_maker = MipMaker::new(gpu);
-        let baked_mips = mip_maker.bake_range_mips(gpu, height_texture);
+        let mip_maker = MipMaker::get(gpu);
+        let baked_mips = mip_maker.bake_range_mips(gpu, &height_texture);
         let mip_data = bytemuck::cast_slice(&baked_mips.raw_data);
         let mip_img = image::ImageBuffer::<image::LumaA<u16>, _>::from_raw(mip_width, all_mips_height, mip_data).unwrap();
         mip_img.save(format!("{}.range-mip.r16f.png", path)).unwrap();

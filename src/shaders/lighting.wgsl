@@ -81,9 +81,13 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         color = mix(trans, refl, fresnel);
     } else {
         let albedo = textureLoad(albedo_buf, px, 0).xyz;
-        let ambient = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
-        let direct = sun.sun_color * max(0.0, dot(normal, sun.sun_dir));
-        color = albedo * (ambient + direct);
+        if material == MAT_EMIT {
+            color = albedo;
+        } else {
+            let ambient = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
+            let direct = sun.sun_color * max(0.0, dot(normal, sun.sun_dir));
+            color = albedo * (ambient + direct);
+        }
     }
     return vec4f(color, 1.0);
 }
@@ -115,10 +119,16 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     let look_falloff = exp(world_pos.z / (-look_dir_below.z * sun.half_secci));
 
     let albedo = textureLoad(albedo_buf, px, 0).xyz;
-    let normal = 2 * textureLoad(normal_buf, px, 0).xyz - 1;
-    let ambient = amb_falloff * mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
-    let direct = sun_falloff * sun.sun_color * sun.refr_sun_trans * max(0.0, dot(normal, sun.refr_sun_dir));
-    let color = albedo * (ambient + direct);
+
+    var color: vec3f;
+    if material == MAT_EMIT {
+        color = albedo;
+    } else {
+        let normal = 2 * textureLoad(normal_buf, px, 0).xyz - 1;
+        let ambient = amb_falloff * mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
+        let direct = sun_falloff * sun.sun_color * sun.refr_sun_trans * max(0.0, dot(normal, sun.refr_sun_dir));
+        color = albedo * (ambient + direct);
+    }
     return vec4f(mix(sun.water_lim_color, color, look_falloff), 1);
 }
 
