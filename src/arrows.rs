@@ -8,7 +8,7 @@ use wgpu::*;
 use crate::deferred_renderer::*;
 use crate::gputil::*;
 use crate::camera::*;
-use crate::terrain::HeightmapTerrain;
+use crate::terrain_view::HeightmapTerrain;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]

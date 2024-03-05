@@ -1,7 +1,4 @@
-use bowfishing_blitz::{arrows::ArrowController, *};
-use gputil::*;
-use camera::*;
-use deferred_renderer::*;
+use bowfishing_blitz::{*, arrows::ArrowController, gputil::*, camera::*, deferred_renderer::*};
 
 use std::time::{Duration, Instant};
 
@@ -39,8 +36,8 @@ fn main() {
     let mut camera = FreeCam::new(CameraSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
     let mut renderer = DeferredRenderer::new(&gpu, &camera, size);
 
-    let land = terrain::HeightmapTerrain::load();
-    let mut terrain_view = terrain::TerrainView::new(&gpu, &renderer, &land);
+    let terrain = terrain_view::HeightmapTerrain::load();
+    let mut terrain_view = crate::terrain_view::TerrainView::new(&gpu, &renderer, &terrain);
 
     let mut arrows = ArrowController::new(&gpu, &renderer, init_time);
 
@@ -132,7 +129,7 @@ fn main() {
         };
         let now = Instant::now();
         camera.tick(now);
-        arrows.tick(now, &land, &mut []);
+        arrows.tick(now, &terrain, &mut []);
 
         let out_view = surface_tex.texture.create_view(&Default::default());
         renderer.render(&gpu, &out_view, &camera, &mut [
