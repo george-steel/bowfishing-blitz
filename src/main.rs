@@ -1,4 +1,4 @@
-use bowfishing_blitz::{arrows::ArrowController, camera::*, deferred_renderer::*, gputil::*, targets::TargetController, *};
+use bowfishing_blitz::{arrows::ArrowController, boat_rail::RailController, camera::*, deferred_renderer::*, gputil::*, targets::TargetController, *};
 
 use std::time::{Duration, Instant};
 
@@ -33,7 +33,8 @@ fn main() {
 
     let init_time = Instant::now();
     //let ft = fragtex::FragDisplay::new(&gctx);
-    let mut camera = FreeCam::new(CameraSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
+    //let mut camera = FreeCam::new(CameraSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
+    let mut camera = RailController::new(init_time);
     let mut renderer = DeferredRenderer::new(&gpu, &camera, size);
 
     let terrain = terrain_view::HeightmapTerrain::load();
@@ -54,7 +55,7 @@ fn main() {
                 Event::DeviceEvent {device_id: _, event: dev_event} => match dev_event {
                     DeviceEvent::Key(key_event) => {
                         if window.has_focus() {
-                            camera.key(key_event.physical_key, key_event.state);
+                            //camera.key(key_event.physical_key, key_event.state);
                         }
                     }
                     DeviceEvent::MouseMotion { delta: (dx, dy) } => {
