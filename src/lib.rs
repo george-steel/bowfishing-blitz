@@ -4,3 +4,4 @@ pub mod camera;
 pub mod deferred_renderer;
 pub mod shaders;
 pub mod arrows;
+pub mod targets;

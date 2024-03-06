@@ -50,7 +50,7 @@ fn arrow_model(vert: u32, inst: u32, underwater: bool) -> ArrowVSOut {
     let norm = normalize(v.world_norm);
 
     var out: GBufferPoint;
-    out.albedo = vec4f(1.0, 0.0, 0.0, 1.0);
+    out.albedo = vec4f(0.0, 0.0, 1.0, 1.0);
     out.normal = vec4f(0.5 * (norm + 1), 1.0);
     out.rough_metal = vec2f(0.0, 0.0);
     out.occlusion = 1.0;
@@ -65,7 +65,7 @@ fn arrow_model(vert: u32, inst: u32, underwater: bool) -> ArrowVSOut {
     let norm = normalize(v.world_norm);
 
     var out: UnderwaterPoint;
-    out.albedo = vec4f(1.0, 0.0, 0.0, 1.0);
+    out.albedo = vec4f(0.0, 0.0, 1.0, 1.0);
     out.normal = vec4f(0.5 * (norm + 1), 1.0);
     out.rough_metal = vec2f(0.0, 0.0);
     out.occlusion = 1.0;

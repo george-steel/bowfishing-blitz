@@ -20,3 +20,8 @@ pub const ARROWS: &str = concat!(
     include_str!("global.wgsl"),
     include_str!("arrows.wgsl"),
 );
+
+pub const TARGETS: &str = concat!(
+    include_str!("global.wgsl"),
+    include_str!("targets.wgsl"),
+);

@@ -236,3 +236,16 @@ impl RenderObject for ArrowController {
 pub trait ArrowTarget {
     fn process_hits(&mut self, start: Vec3, end: Vec3) -> bool;
 }
+
+pub fn collide_ray_sphere(start: Vec3, end: Vec3, center: Vec3, radius: f32) -> bool {
+    let delta = end - start;
+    let proj = delta.dot(center - start) / delta.length_squared();
+    if proj <= 0.0 {
+        (center - start).length_squared() < radius * radius
+    } else if proj >= 1.0 {
+        (center - end).length_squared() < radius * radius
+    } else {
+        let perp = center - start - proj * delta;
+        perp.length_squared() < radius * radius
+    }
+}

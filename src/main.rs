@@ -1,4 +1,4 @@
-use bowfishing_blitz::{*, arrows::ArrowController, gputil::*, camera::*, deferred_renderer::*};
+use bowfishing_blitz::{arrows::ArrowController, camera::*, deferred_renderer::*, gputil::*, targets::TargetController, *};
 
 use std::time::{Duration, Instant};
 
@@ -40,6 +40,7 @@ fn main() {
     let mut terrain_view = crate::terrain_view::TerrainView::new(&gpu, &renderer, &terrain);
 
     let mut arrows = ArrowController::new(&gpu, &renderer, init_time);
+    let mut targets = TargetController::new(&gpu, &renderer, &terrain);
 
     let mut grabbed = false;
     let window = &window;
@@ -129,12 +130,15 @@ fn main() {
         };
         let now = Instant::now();
         camera.tick(now);
-        arrows.tick(now, &terrain, &mut []);
+        arrows.tick(now, &terrain, &mut [
+            &mut targets,
+        ]);
 
         let out_view = surface_tex.texture.create_view(&Default::default());
         renderer.render(&gpu, &out_view, &camera, &mut [
             &mut terrain_view,
             &mut arrows,
+            &mut targets,
         ]);
         surface_tex.present();
         //window.request_redraw();
