@@ -1,10 +1,13 @@
 use glam::*;
+use kira::manager::AudioManager;
+use kira::sound::static_sound::StaticSoundData;
 use wgpu::{util::BufferInitDescriptor, *};
 use wgpu::util::DeviceExt;
 use rand::random;
 use std::mem::size_of;
 
 use crate::arrows::{collide_ray_sphere, ArrowTarget};
+use crate::audio_util::SoundAtlas;
 use crate::{deferred_renderer::{DeferredRenderer, RenderObject}, gputil::*, terrain_view::HeightmapTerrain};
 
 #[repr(C)]
@@ -65,7 +68,7 @@ pub struct TargetController {
     targets_buf: Buffer,
     targets_bg: BindGroup,
     targets_vertex_buf: Buffer,
-
+    smash_sounds: SoundAtlas,
 
     pub all_targets: Box<[Target]>,
     dirty: bool,
@@ -190,9 +193,13 @@ impl TargetController {
             ]
         });
 
+        let smash_sounds = SoundAtlas::load_with_starts("./assets/glass_smash.ogg", -3.0,
+            &[0.0, 1.57, 2.84, 4.02, 5.43, 6.98, 8.38, 9.68, 10.97, 12.32, 13.58, 15.30, 16.73, 18.12]).unwrap();
+
         TargetController {
             targets_above_pipeline, targets_below_pipeline,
             targets_buf, targets_bg, targets_vertex_buf,
+            smash_sounds,
 
             all_targets,
             dirty: true,
@@ -224,13 +231,15 @@ impl RenderObject for TargetController {
 }
 
 impl ArrowTarget for TargetController {
-    fn process_hits(&mut self, start: Vec3, end: Vec3) -> bool {
+    fn process_hits(&mut self, audio: &mut AudioManager, start: Vec3, end: Vec3) -> bool {
         let mut was_hit = false;
 
         for t in self.all_targets.iter_mut() {
             if t.state == 0 && collide_ray_sphere(start, end, t.center, TARGET_RADIUS) {
                 t.state = 1;
                 was_hit = true;
+
+                audio.play(self.smash_sounds.random_sound()).unwrap();
             }
         }
 

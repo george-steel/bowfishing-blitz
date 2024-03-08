@@ -1,4 +1,5 @@
 use bowfishing_blitz::{arrows::ArrowController, boat_rail::RailController, camera::*, deferred_renderer::*, gputil::*, targets::TargetController, *};
+use kira::{manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings}, sound::streaming::{StreamingSoundData, StreamingSoundSettings}, Volume};
 
 use std::time::{Duration, Instant};
 
@@ -19,6 +20,7 @@ fn main() {
     let mut event_loop = EventLoop::new().unwrap();
     let window = winit::window::WindowBuilder::new()
             .with_title("Bowfishing Blitz")
+            .with_maximized(true)
             .build(&event_loop).unwrap();
     let surface = wgpu_inst.create_surface(&window).unwrap();
     
@@ -31,8 +33,15 @@ fn main() {
     let mut size = window_size(&window);
     gpu.configure_surface_target(&surface, size);
 
+    let mut audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).unwrap();
+    let music_result = StreamingSoundData::from_file(
+        "./assets/river_valley_breakdown.ogg", 
+        StreamingSoundSettings::default().volume(Volume::Decibels(-6.0)));
+    if let Ok(music) = music_result {
+        let _ = audio.play(music);
+    }
+
     let init_time = Instant::now();
-    //let ft = fragtex::FragDisplay::new(&gctx);
     //let mut camera = FreeCam::new(CameraSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
     let mut camera = RailController::new(init_time);
     let mut renderer = DeferredRenderer::new(&gpu, &camera, size);
@@ -85,7 +94,7 @@ fn main() {
                         if window.has_focus() {
                             if grabbed {
                                 log::info!("SHOOT");
-                                arrows.shoot(&camera);
+                                arrows.shoot(&mut audio, &camera);
                             } else {
                                 let _ = window.set_cursor_grab(CursorGrabMode::Confined);
                                 window.set_cursor_visible(false);
@@ -131,7 +140,7 @@ fn main() {
         };
         let now = Instant::now();
         camera.tick(now);
-        arrows.tick(now, &terrain, &mut [
+        arrows.tick(now, &terrain, &mut audio, &mut [
             &mut targets,
         ]);
 

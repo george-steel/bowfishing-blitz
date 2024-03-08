@@ -4,7 +4,10 @@ use std::num;
 use std::time::Instant;
 
 use glam::*;
+use kira::manager::AudioManager;
+use kira::sound::Sound;
 use wgpu::*;
+use crate::audio_util::SoundAtlas;
 use crate::deferred_renderer::*;
 use crate::gputil::*;
 use crate::camera::*;
@@ -30,6 +33,10 @@ pub struct ArrowController {
     arrows_below_pipeline: RenderPipeline,
     arrows_buf: Buffer,
     arrows_bg: BindGroup,
+
+    release_sounds: SoundAtlas,
+    splish_sounds: SoundAtlas,
+    thunk_sounds: SoundAtlas,
 
     all_arrows: Box<[Arrow]>, // live arrow + ring buffer
     num_dead_arrows: usize,
@@ -127,10 +134,16 @@ impl ArrowController {
             ]
         });
 
+
+        let release_sounds = SoundAtlas::load_with_stride("./assets/arrow_release.ogg", 5.0, 0.4).unwrap();
+        let thunk_sounds = SoundAtlas::load_with_stride("./assets/arrow_thunk.ogg", -3.0, 0.5).unwrap();
+        let splish_sounds = SoundAtlas::load_with_stride("./assets/water_splish.ogg", -2.0, 1.0).unwrap();
+
         let all_arrows = bytemuck::zeroed_slice_box(MAX_DEAD_ARROWS + 1);
         ArrowController {
             arrows_above_pipeline, arrows_below_pipeline,
             arrows_buf, arrows_bg,
+            release_sounds, splish_sounds, thunk_sounds,
 
             all_arrows,
             num_dead_arrows: 0,
@@ -140,17 +153,18 @@ impl ArrowController {
         }
     }
 
-    pub fn shoot(&mut self, camera: &impl CameraController) {
+    pub fn shoot(&mut self, audio: &mut AudioManager, camera: &impl CameraController) {
         self.arrow_is_live = true;
         let start_pos = camera.eye() - vec3(0.0, 0.0, 0.08);
         let dir = camera.look_dir().normalize();
         let end_pos = start_pos + dir * MOVING_ARROW_LEN;
         self.all_arrows[0] = Arrow {
             end_pos, dir, state: 1, len: MOVING_ARROW_LEN,
-        }
+        };
+        audio.play(self.release_sounds.random_sound()).unwrap();
     }
 
-    pub fn tick(&mut self, now: Instant, terrain: &HeightmapTerrain, targets: &mut[&mut dyn ArrowTarget]) -> bool {
+    pub fn tick(&mut self, now: Instant, terrain: &HeightmapTerrain, audio: &mut AudioManager, targets: &mut[&mut dyn ArrowTarget]) -> bool {
         let mut did_hit = false;
         if self.arrow_is_live {
             let delta_t = now - self.updated_at;
@@ -184,6 +198,8 @@ impl ArrowController {
                             };
                             self.next_dead_arrow = (self.next_dead_arrow + 1) % MAX_DEAD_ARROWS;
                             self.num_dead_arrows = MAX_DEAD_ARROWS.min(self.num_dead_arrows + 1);
+
+                            audio.play(self.thunk_sounds.random_sound()).unwrap();
                             break;
                         }
                         last_height = h;
@@ -193,8 +209,12 @@ impl ArrowController {
             }
             self.all_arrows[0].end_pos = new_pos;
 
+            if self.arrow_is_live && old_pos.z > 0.0 && new_pos.z <= 0.0 {
+                audio.play(self.splish_sounds.random_sound()).unwrap();
+            }
+
             for target in targets.iter_mut() {
-                let hit_target =  target.process_hits(old_pos, new_pos);
+                let hit_target =  target.process_hits(audio, old_pos, new_pos);
                 did_hit = did_hit || hit_target;
             }
 
@@ -234,7 +254,7 @@ impl RenderObject for ArrowController {
 }
 
 pub trait ArrowTarget {
-    fn process_hits(&mut self, start: Vec3, end: Vec3) -> bool;
+    fn process_hits(&mut self, audio: &mut AudioManager, start: Vec3, end: Vec3) -> bool;
 }
 
 pub fn collide_ray_sphere(start: Vec3, end: Vec3, center: Vec3, radius: f32) -> bool {

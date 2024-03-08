@@ -17,7 +17,7 @@ pub struct RailController {
 }
 
 const EYE_HEIGHT: f32 = 2.0;
-const FOV_Y_DEG: f32 = 45.0;
+const FOV_Y_DEG: f32 = 60.0;
 const CLIP_NEAR: f32 = 0.1;
 const MAX_PITCH: f32 = 88.0;
 const ROT_SPEED: f32 = 0.05;

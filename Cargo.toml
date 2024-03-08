@@ -19,6 +19,7 @@ wgpu = "0.19.3"
 winit = "=0.29.10"
 rgbe = "0.0.1"
 rand = "0.8.5"
+kira = "0.8.7"
 
 [profile.dev.package."*"]
 opt-level = 3
