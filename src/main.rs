@@ -34,12 +34,12 @@ fn main() {
     gpu.configure_surface_target(&surface, size);
 
     let mut audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).unwrap();
-    /*let music_result = StreamingSoundData::from_file(
+    let music_result = StreamingSoundData::from_file(
         "./assets/river_valley_breakdown.ogg", 
         StreamingSoundSettings::default().volume(Volume::Decibels(-6.0)));
     if let Ok(music) = music_result {
         let _ = audio.play(music);
-    }*/
+    }
 
     let init_time = Instant::now();
     //let mut camera = FreeCam::new(CameraSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);

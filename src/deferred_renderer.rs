@@ -59,7 +59,7 @@ impl GlobalLighting {
 
 struct DeferredRendererTextures {
     size: UVec2,
-    half_size: UVec2,
+    water_size: UVec2,
     dist: Texture,
     dist_view: TextureView,
     albedo: Texture,
@@ -110,9 +110,11 @@ impl DeferredRendererTextures {
 
     fn create(gpu: &GPUContext, output_size: UVec2) -> Self {
         let size = output_size.max(uvec2(1,1));
-        let half_size = (output_size / 2).max(uvec2(1,1));
+        let water_y = 720.clamp(output_size.y / 2, output_size.y);
+        let water_x = (size.x * water_y / size.y).max(1);
+        let water_size = uvec2(water_x, water_y);
         let size_3d = extent_2d(size);
-        let half_size_3d = extent_2d(half_size);
+        let water_size_3d = extent_2d(water_size);
 
         let (dist, dist_view) = gpu.create_empty_texture(size_3d, TextureFormat::Depth32Float, "dist");
         let (albedo, albedo_view) = gpu.create_empty_texture(size_3d, TextureFormat::Rg11b10Float, "albedo");
@@ -120,17 +122,17 @@ impl DeferredRendererTextures {
         let (rough_metal, rm_view) = gpu.create_empty_texture(size_3d, TextureFormat::Rg8Unorm, "rough-metal");
         let (ao, ao_view) = gpu.create_empty_texture(size_3d, TextureFormat::R8Unorm, "ao");
         let (material, material_view) = gpu.create_empty_texture(size_3d, TextureFormat::R8Uint, "material");
-        let (water, water_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::Rg11b10Float, "water-out");
-        let (water_dist, water_dist_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::Depth32Float, "water-dist");
-        let (water_albedo, water_albedo_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::Rg11b10Float, "water-albedo");
-        let (water_normal, water_normal_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::Rgb10a2Unorm, "water-normal");
-        let (water_rough_metal, water_rm_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::Rg8Unorm, "water-rough-metal");
-        let (water_ao, water_ao_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::R8Unorm, "water-ao");
-        let (water_material, water_material_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::R8Uint, "water-material");
-        let (water_depth_adj, water_depth_adj_view) = gpu.create_empty_texture(half_size_3d, TextureFormat::R16Float, "water-depth-adj");
+        let (water, water_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Float, "water-out");
+        let (water_dist, water_dist_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Depth32Float, "water-dist");
+        let (water_albedo, water_albedo_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Float, "water-albedo");
+        let (water_normal, water_normal_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rgb10a2Unorm, "water-normal");
+        let (water_rough_metal, water_rm_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg8Unorm, "water-rough-metal");
+        let (water_ao, water_ao_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Unorm, "water-ao");
+        let (water_material, water_material_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Uint, "water-material");
+        let (water_depth_adj, water_depth_adj_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R16Float, "water-depth-adj");
 
         Self {
-            size, half_size,
+            size, water_size,
             dist, dist_view,
             albedo, albedo_view,
             normal, normal_view,
@@ -188,7 +190,7 @@ impl DeferredRenderer {
 
         let main_camera_buf = gpu.device.create_buffer_init(&BufferInitDescriptor{
             label: Some("camera_buf"),
-            contents: bytemuck::bytes_of(&camera_ctrl.camera(gbuffers.size.as_vec2(), gbuffers.half_size.as_vec2())),
+            contents: bytemuck::bytes_of(&camera_ctrl.camera(gbuffers.size.as_vec2(), gbuffers.water_size.as_vec2())),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
@@ -500,7 +502,7 @@ impl DeferredRenderer {
     pub fn render(&mut self, gpu: &GPUContext, out: &wgpu::TextureView, camera_ctrl: &impl CameraController, scene: &mut[&mut dyn RenderObject]) {
         let mut command_encoder = gpu.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("deferred_renderer") });
 
-        let camera = camera_ctrl.camera(self.gbuffers.size.as_vec2(), self.gbuffers.half_size.as_vec2());
+        let camera = camera_ctrl.camera(self.gbuffers.size.as_vec2(), self.gbuffers.water_size.as_vec2());
         gpu.queue.write_buffer(&self.main_camera_buf, 0, bytemuck::bytes_of(&camera));
 
         for obj in scene.iter_mut() {

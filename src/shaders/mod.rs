@@ -23,5 +23,6 @@ pub const ARROWS: &str = concat!(
 
 pub const TARGETS: &str = concat!(
     include_str!("global.wgsl"),
+    include_str!("noise.wgsl"),
     include_str!("targets.wgsl"),
 );

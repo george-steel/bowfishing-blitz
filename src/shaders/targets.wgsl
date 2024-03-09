@@ -23,11 +23,11 @@ struct PotVSOut {
     @location(2) uv: vec2f,
     @location(3) world_norm: vec3f,
     @location(4) world_tan: vec3f,
-    @location(5) state: u32,
 }
 
 const POT_U_DIVS: u32 = 8;
-const SMASH_TIME: f32 = 0.8;
+const EXPLODE_TIME: f32 = 0.5;
+const SINK_TIME: f32 = 1.0;
 
 var<private> QUAD_U: array<f32, 6> = array(0, 0.5, 1, 1, 0.5, 1.5);
 var<private> QUAD_V: array<u32, 6> = array(0, 1, 0, 0, 1, 1);
@@ -37,18 +37,46 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     let quad_idx = (vert_idx / 6) % (POT_U_DIVS);
     let quad_corner = vert_idx % 6;
 
-    let phi: f32 = f32(quad_idx) + QUAD_U[quad_corner] - 0.5 * f32(ring_idx % 2);
+    let phi: f32 = f32(quad_idx) + QUAD_U[quad_corner] + 0.5 * f32(ring_idx % 2);
     let u = phi / f32(POT_U_DIVS);
     let rho = vec2f(cos(TAU * u), sin(TAU * u));
     let ring_offset = QUAD_V[quad_corner];
     let point = pot_model[ring_idx + ring_offset];
     
-    let local_pos = vec3f(rho * point.pos_rz.x, point.pos_rz.y);
+    var local_pos = vec3f(rho * point.pos_rz.x, point.pos_rz.y);
     let norm_rz = select(point.norm2_rz, point.norm1_rz, ring_offset == 1);
-    let local_norm = vec3f(rho * norm_rz.x, norm_rz.y);
-    let local_tan = vec3f(rho.y, -rho.x, 0.0);
+    var local_norm = vec3f(rho * norm_rz.x, norm_rz.y);
+    var local_tan = vec3f(rho.y, -rho.x, 0.0);
 
     let pot = pots[inst_idx];
+
+    if pot.time_hit > 0 {
+        let explode_time = saturate((camera.time - pot.time_hit) / EXPLODE_TIME);
+        let explode_progress = (2.0 - explode_time) * explode_time;
+        let sink_progress = smoothstep(0.0, 1.0, (camera.time - pot.time_hit) / SINK_TIME);
+
+        let tri_idx = (vert_idx / 3) % (2 * POT_U_DIVS);
+        let tri_u = f32(tri_idx + (ring_idx % 2)) / f32(2 * POT_U_DIVS);
+        let tri_rho = vec2f(cos(TAU * tri_u), sin(TAU * tri_u));
+        let tri_point = pot_model[ring_idx + (quad_corner / 3)];
+        let anchor_pos = vec3f(tri_rho * tri_point.pos_rz.x, tri_point.pos_rz.y);
+        let corner_delta = local_pos - anchor_pos;
+
+        let noise = pcg3d_snorm(vec3i(vec3u(ring_idx, tri_idx, inst_idx)));
+        let explode_delta = explode_progress * (vec3f(tri_rho * tri_point.pos_rz.x, 1.0) + 0.5 * noise);
+        let exploded_pos = anchor_pos + explode_delta;
+
+        let shard_rot = normalize(vec4f(0.3 * explode_progress * noise.z * local_tan, 1.0));
+
+        let world_down = quat_rotate(pot.rotate * vec4f(1, 1, 1, -1), vec3f(0, 0, -1));
+        let world_down_adj = mix(1.0, -1/world_down.z, 0.7);
+        let down = mix(vec3f(0, 0, -1), world_down * world_down_adj, 0.6);
+        let sink_delta = 0.9 * sink_progress * exploded_pos.z * down;
+        let sunk_pos = exploded_pos + sink_delta;
+        local_pos = sunk_pos + quat_rotate(shard_rot, corner_delta);
+        local_norm = quat_rotate(shard_rot, local_norm);
+    }
+
     let world_pos = quat_rotate(pot.rotate, local_pos) + pot.base_point;
     let world_norm = quat_rotate(pot.rotate, local_norm);
     let world_tan = quat_rotate(pot.rotate, local_tan);
@@ -64,7 +92,6 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     out.uv = vec2f(u, point.v);
     out.world_norm = world_norm;
     out.world_tan = world_tan;
-    out.state = select(0u, 1u, pot.time_hit >= 0);
     return out;
 }
 
@@ -82,9 +109,7 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     }
     let norm = normalize(v.world_norm) * select(-1.0, 1.0, is_forward);
     let checker = (floor(v.uv.x * 6) + floor(v.uv.y * 10)) % 2;
-    let red = vec3f(1.0, 0.0, 0.0);
-    let green = vec3f(0.0, 1.0, 0.0);
-    let albedo = select(select(red, green, v.state != 0), vec3f(0.5), checker == 0.0);
+    let albedo = select(vec3f(0.78404, 0.08819, 0.2597), vec3f(0.7), checker == 0.0) * select(0.2, 1.0, is_forward);
 
     var out: GBufferPoint;
     out.albedo = vec4f(albedo, 1.0);
@@ -101,10 +126,7 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     }
     let norm = normalize(v.world_norm) * select(-1.0, 1.0, is_forward);
     let checker = (floor(v.uv.x * 6) + floor(v.uv.y * 10)) % 2;
-
-    let red = vec3f(1.0, 0.0, 0.0);
-    let green = vec3f(0.0, 1.0, 0.0);
-    let albedo = select(select(red, green, v.state != 0), vec3f(0.5), checker == 0.0);
+    let albedo = select(vec3f(0.78404, 0.08819, 0.2597), vec3f(0.7), checker == 0.0) * select(0.2, 1.0, is_forward);
 
     var out: UnderwaterPoint;
     out.albedo = vec4f(albedo, 1.0);
