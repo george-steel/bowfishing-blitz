@@ -1,27 +1,51 @@
-struct Pot {
+struct PotInst {
     center: vec3f,
     state: u32,
 }
 
-@group(1) @binding(0) var<storage, read> pots: array<Pot>;
+@group(1) @binding(0) var<storage, read> pots: array<PotInst>;
 
-struct PotVSIn {
-    @location(0) pos: vec3f,
-    @location(1) norm: vec3f,
+struct LathePoint {
+    pos_rz: vec2f,
+    norm1_rz: vec2f,
+    norm2_rz: vec2f,
+    v: f32,
 }
+
+@group(1) @binding(1) var<uniform> pot_model: array<LathePoint, 12>;
 
 struct PotVSOut {
     @builtin(position) clip_pos: vec4f,
     @location(0) world_pos: vec3f,
     @location(1) world_norm: vec3f,
     @location(2) refr_z: f32,
-    @location(3) state: u32,
+    @location(3) uv: vec2f,
+    @location(4) state: u32,
 }
 
-fn pot_vert(v: PotVSIn, inst: u32, underwater: bool) -> PotVSOut {
-    let pot = pots[inst];
+const POT_U_DIVS: u32 = 8;
 
-    let world_pos = pot.center + 0.4 * v.pos;
+var<private> QUAD_U: array<f32, 6> = array(0, 0.5, 1, 1, 0.5, 1.5);
+var<private> QUAD_V: array<u32, 6> = array(0, 1, 0, 0, 1, 1);
+
+fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
+    let ring_idx = vert_idx / (6 * POT_U_DIVS);
+    let quad_idx = (vert_idx / 6) % (POT_U_DIVS);
+    let quad_corner = vert_idx % 6;
+
+    let phi: f32 = f32(quad_idx) + QUAD_U[quad_corner] - 0.5 * f32(ring_idx % 2);
+    let u = phi / f32(POT_U_DIVS);
+    let rho = vec2f(cos(TAU * u), sin(TAU * u));
+    let ring_offset = QUAD_V[quad_corner];
+    let point = pot_model[ring_idx + ring_offset];
+    
+    let local_pos = vec3f(rho * point.pos_rz.x, point.pos_rz.y);
+    let norm_rz = select(point.norm2_rz, point.norm1_rz, ring_offset == 1);
+    let local_norm = vec3f(rho * norm_rz.x, norm_rz.y);
+
+    let pot = pots[inst_idx];
+    let world_pos = pot.center + local_pos;
+
     var refr_z = world_pos.z;
     if underwater {
         refr_z = refracted_z(world_pos);
@@ -29,28 +53,30 @@ fn pot_vert(v: PotVSIn, inst: u32, underwater: bool) -> PotVSOut {
     var out: PotVSOut;
     out.clip_pos = camera.matrix * vec4f(world_pos.xy, refr_z, 1.0);
     out.world_pos = world_pos;
-    out.world_norm = v.norm;
+    out.world_norm = local_norm;
     out.refr_z = refr_z;
+    out.uv = vec2f(u, point.v);
     out.state = pot.state;
     return out;
 }
 
-@vertex fn pot_vert_above(vert: PotVSIn, @builtin(instance_index) inst: u32) -> PotVSOut {
+@vertex fn pot_vert_above(@builtin(vertex_index) vert: u32, @builtin(instance_index) inst: u32) -> PotVSOut {
     return pot_vert(vert, inst, false);
 }
 
-@vertex fn pot_vert_below(vert: PotVSIn, @builtin(instance_index) inst: u32) -> PotVSOut {
+@vertex fn pot_vert_below(@builtin(vertex_index) vert: u32, @builtin(instance_index) inst: u32) -> PotVSOut {
     return pot_vert(vert, inst, true);
 }
 
-@fragment fn pot_frag_above(v: PotVSOut) -> GBufferPoint {
+@fragment fn pot_frag_above(v: PotVSOut, @builtin(front_facing) is_forward: bool) -> GBufferPoint {
     if camera.eye.z > 0 && v.world_pos.z < 0 {
         discard;
     }
-    let norm = normalize(v.world_norm);
+    let norm = normalize(v.world_norm) * select(-1.0, 1.0, is_forward);
+    let checker = (floor(v.uv.x * 6) + floor(v.uv.y * 10)) % 2;
     let red = vec3f(1.0, 0.0, 0.0);
     let green = vec3f(0.0, 1.0, 0.0);
-    let albedo = select(red, green, v.state != 0);
+    let albedo = select(select(red, green, v.state != 0), vec3f(0.5), checker == 0.0);
 
     var out: GBufferPoint;
     out.albedo = vec4f(albedo, 1.0);
@@ -61,15 +87,16 @@ fn pot_vert(v: PotVSIn, inst: u32, underwater: bool) -> PotVSOut {
     return out;
 }
 
-@fragment fn pot_frag_below(v: PotVSOut) -> UnderwaterPoint {
+@fragment fn pot_frag_below(v: PotVSOut, @builtin(front_facing) is_forward: bool) -> UnderwaterPoint {
     if v.world_pos.z > 0 {
         discard;
     }
-    let norm = normalize(v.world_norm);
+    let norm = normalize(v.world_norm) * select(-1.0, 1.0, is_forward);
+    let checker = (floor(v.uv.x * 6) + floor(v.uv.y * 10)) % 2;
 
     let red = vec3f(1.0, 0.0, 0.0);
     let green = vec3f(0.0, 1.0, 0.0);
-    let albedo = select(red, green, v.state != 0);
+    let albedo = select(select(red, green, v.state != 0), vec3f(0.5), checker == 0.0);
 
     var out: UnderwaterPoint;
     out.albedo = vec4f(albedo, 1.0);

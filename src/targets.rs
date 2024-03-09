@@ -13,61 +13,76 @@ use crate::{deferred_renderer::{DeferredRenderer, RenderObject}, gputil::*, terr
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Target {
-    center: Vec3,
+    bottom: Vec3,
     state: u32, // 0 is live, 1 is hit
 }
 
 const NUM_TARGETS: usize = 128;
-const TARGET_RADIUS: f32 = 0.4;
+const TARGET_RADIUS: f32 = 0.5;
 
-
-#[repr(C)]
+#[repr(C, align(8))]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct TargetVertex {
-    pos: Vec3,
-    norm: Vec3,
+struct LathePoint {
+    pub pos_rz: Vec2,
+    pub norm1_rz: Vec2,
+    pub norm2_rz: Vec2,
+    pub v: f32,
+    pub pad: f32,
 }
 
-const OCTAHEDHRON: &[TargetVertex] = &[
-    TargetVertex {pos: vec3(0.0, 0.0, -1.0), norm: vec3(1.0, 1.0, -1.0)},
-    TargetVertex {pos: vec3(0.0, 1.0, 0.0), norm: vec3(1.0, 1.0, -1.0)},
-    TargetVertex {pos: vec3(1.0, 0.0, 0.0), norm: vec3(1.0, 1.0, -1.0)},
+impl LathePoint {
+    pub fn smooth(pos: Vec2, v: f32, norm: Vec2) -> Self {
+        let norm_rz = norm.normalize();
+        LathePoint {
+            pos_rz: pos,
+            norm1_rz: norm_rz,
+            norm2_rz: norm_rz,
+            v,
+            pad: 0.0,
+        }
+    }
 
-    TargetVertex {pos: vec3(0.0, 0.0, -1.0), norm: vec3(1.0, -1.0, -1.0)},
-    TargetVertex {pos: vec3(1.0, 0.0, 0.0), norm: vec3(1.0, -1.0, -1.0)},
-    TargetVertex {pos: vec3(0.0, -1.0, 0.0), norm: vec3(1.0, -1.0, -1.0)},
+    pub fn sharp(pos: Vec2, v: f32, norm1: Vec2, norm2: Vec2) -> Self {
+        let norm1_rz = norm1.normalize();
+        let norm2_rz = norm2.normalize();
+        LathePoint {
+            pos_rz: pos,
+            norm1_rz,
+            norm2_rz,
+            v,
+            pad: 0.0,
+        }
+    }
+}
 
-    TargetVertex {pos: vec3(0.0, 0.0, -1.0), norm: vec3(-1.0, -1.0, -1.0)},
-    TargetVertex {pos: vec3(0.0, -1.0, 0.0), norm :vec3(-1.0, -1.0, -1.0)},
-    TargetVertex {pos: vec3(-1.0, 0.0, 0.0), norm: vec3(-1.0, -1.0, -1.0)},
+fn pot_model() -> Box<[LathePoint]> {
+    // Modelled on graph paper
+    let points = vec![
+        LathePoint::smooth(vec2(4.0/16.0, 15.0/16.0), 0.0, vec2(0.0, -1.0)),
+        LathePoint::smooth(vec2(3.0/16.0, 16.0/16.0), 1.0/16.0, vec2(-1.0, 0.0)),
+        LathePoint::smooth(vec2(4.0/16.0, 17.0/16.0), 2.0/16.0, vec2(0.0, 1.0)),
+        LathePoint::smooth(vec2(5.0/16.0, 16.0/16.0), 3.0/16.0, vec2(1.0, 0.0)),
+        LathePoint::sharp(vec2(4.0/16.0, 15.0/16.0), 0.25, vec2(1.0, 2.0), vec2(0.0, -1.0)),
 
-    TargetVertex {pos: vec3(0.0, 0.0, -1.0), norm: vec3(-1.0, 1.0, -1.0)},
-    TargetVertex {pos: vec3(-1.0, 0.0, 0.0), norm: vec3(-1.0, 1.0, -1.0)},
-    TargetVertex {pos: vec3(0.0, 1.0, 0.0), norm: vec3(-1.0, 1.0, -1.0)},
+        LathePoint::smooth(vec2(7.0/16.0, 13.0/16.0), 1.0 - (23.5 / 28.0)*0.75, vec2(1.0, 1.0)),
+        LathePoint::smooth(vec2(8.0/16.0, 11.0/16.0), 1.0 - (20.5 / 28.0)*0.75, vec2(4.0, 1.0)),
+        LathePoint::smooth(vec2(8.0/16.0, 9.0/16.0), 1.0 - (18.0 / 28.0)*0.75, vec2(8.0, -1.0)),
+        LathePoint::smooth(vec2(7.0/16.0, 5.0/16.0), 1.0 - (12.5 / 28.0)*0.75, vec2(3.0, -1.0)),
+        LathePoint::smooth(vec2(6.0/16.0, 3.0/16.0), 1.0 - (9.5 / 28.0)*0.75, vec2(1.75, -1.0)),
+        LathePoint::sharp(vec2(4.0/16.0, 0.0), 1.0 - (5.0 / 28.0)*0.75, vec2(0.0, -1.0), vec2(1.0, -1.0)),
+        LathePoint::smooth(vec2(0.0, 0.0), 1.0, vec2(0.0, -1.0)),
+    ];
+    points.into_boxed_slice()
+}
 
-    TargetVertex {pos: vec3(0.0, 0.0, 1.0), norm: vec3(1.0, 1.0, 1.0)},
-    TargetVertex {pos: vec3(1.0, 0.0, 0.0), norm: vec3(1.0, 1.0, 1.0)},
-    TargetVertex {pos: vec3(0.0, 1.0, 0.0), norm: vec3(1.0, 1.0, 1.0)},
-
-    TargetVertex {pos: vec3(0.0, 0.0, 1.0), norm: vec3(1.0, -1.0, 1.0)},
-    TargetVertex {pos: vec3(0.0, -1.0, 0.0), norm: vec3(1.0, -1.0, 1.0)},
-    TargetVertex {pos: vec3(1.0, 0.0, 0.0), norm: vec3(1.0, -1.0, 1.0)},
-
-    TargetVertex {pos: vec3(0.0, 0.0, 1.0), norm: vec3(-1.0, -1.0, 1.0)},
-    TargetVertex {pos: vec3(-1.0, 0.0, 0.0), norm: vec3(-1.0, -1.0, 1.0)},
-    TargetVertex {pos: vec3(0.0, -1.0, 0.0), norm: vec3(-1.0, -1.0, 1.0)},
-
-    TargetVertex {pos: vec3(0.0, 0.0, 1.0), norm: vec3(-1.0, 1.0, 1.0)},
-    TargetVertex {pos: vec3(0.0, 1.0, 0.0), norm: vec3(-1.0, 1.0, 1.0)},
-    TargetVertex {pos: vec3(-1.0, 0.0, 0.0), norm: vec3(-1.0, 1.0, 1.0)},
-];
+const POT_U_DIVS: u32 = 8;
+const NUM_POT_VERTS: u32 = 11 * 6 * POT_U_DIVS;
 
 pub struct TargetController {
     targets_above_pipeline: RenderPipeline,
     targets_below_pipeline: RenderPipeline,
     targets_buf: Buffer,
     targets_bg: BindGroup,
-    targets_vertex_buf: Buffer,
     smash_sounds: SoundAtlas,
 
     pub all_targets: Box<[Target]>,
@@ -83,7 +98,7 @@ impl TargetController {
             if let Some(z) = terrain.height_at(xy) {
                 if z < 0.0 {
                     targets.push(Target {
-                        center: vec3(xy.x, xy.y, z + 0.3),
+                        bottom: vec3(xy.x, xy.y, z),
                         state: 0,
                     });
                 }
@@ -108,7 +123,13 @@ impl TargetController {
                     visibility: ShaderStages::VERTEX,
                     ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
-                }
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer { ty: BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
             ]
         });
 
@@ -121,7 +142,7 @@ impl TargetController {
             push_constant_ranges: &[],
         });
 
-        let targets_vertex_layout = VertexBufferLayout {
+        /*let targets_vertex_layout = VertexBufferLayout {
             array_stride: size_of::<TargetVertex>() as u64,
             step_mode: VertexStepMode::Vertex,
             attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3],
@@ -131,6 +152,13 @@ impl TargetController {
             label: Some("pots_vertex_buf"),
             contents: bytemuck::cast_slice(OCTAHEDHRON),
             usage: BufferUsages::VERTEX,
+        });*/
+
+        let target_lathe_points = pot_model();
+        let target_lathe_buf = gpu.device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("target_lathe_buf"),
+            contents: bytemuck::cast_slice(&target_lathe_points),
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
         let targets_above_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -139,7 +167,7 @@ impl TargetController {
             vertex: VertexState {
                 module: &shaders,
                 entry_point: "pot_vert_above",
-                buffers: &[targets_vertex_layout.clone()],
+                buffers: &[],
             },
             fragment: Some(FragmentState {
                 module: &shaders,
@@ -148,7 +176,7 @@ impl TargetController {
             }),
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleList,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode: None,
                 ..PrimitiveState::default()
             },
             depth_stencil: reverse_z(),
@@ -162,7 +190,7 @@ impl TargetController {
             vertex: VertexState {
                 module: &shaders,
                 entry_point: "pot_vert_below",
-                buffers: &[targets_vertex_layout],
+                buffers: &[],
             },
             fragment: Some(FragmentState {
                 module: &shaders,
@@ -171,7 +199,7 @@ impl TargetController {
             }),
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleList,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode: None,
                 ..PrimitiveState::default()
             },
             depth_stencil: reverse_z(),
@@ -189,7 +217,8 @@ impl TargetController {
             label: Some("pots_bg"),
             layout: &targets_bg_layout,
             entries: &[
-                BindGroupEntry {binding: 0, resource: targets_buf.as_entire_binding()}
+                BindGroupEntry {binding: 0, resource: targets_buf.as_entire_binding()},
+                BindGroupEntry {binding: 1, resource: target_lathe_buf.as_entire_binding()},
             ]
         });
 
@@ -198,7 +227,7 @@ impl TargetController {
 
         TargetController {
             targets_above_pipeline, targets_below_pipeline,
-            targets_buf, targets_bg, targets_vertex_buf,
+            targets_buf, targets_bg,
             smash_sounds,
 
             all_targets,
@@ -218,15 +247,13 @@ impl RenderObject for TargetController {
     fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {
         pass.set_pipeline(&self.targets_below_pipeline);
         pass.set_bind_group(1, &self.targets_bg, &[]);
-        pass.set_vertex_buffer(0, self.targets_vertex_buf.slice(..));
-        pass.draw(0..(OCTAHEDHRON.len() as u32), 0..(NUM_TARGETS as u32));
+        pass.draw(0..NUM_POT_VERTS, 0..(NUM_TARGETS as u32));
     }
 
     fn draw_opaque<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {
         pass.set_pipeline(&self.targets_above_pipeline);
         pass.set_bind_group(1, &self.targets_bg, &[]);
-        pass.set_vertex_buffer(0, self.targets_vertex_buf.slice(..));
-        pass.draw(0..(OCTAHEDHRON.len() as u32), 0..(NUM_TARGETS as u32));
+        pass.draw(0..NUM_POT_VERTS, 0..(NUM_TARGETS as u32));
     }
 }
 
@@ -235,7 +262,7 @@ impl ArrowTarget for TargetController {
         let mut was_hit = false;
 
         for t in self.all_targets.iter_mut() {
-            if t.state == 0 && collide_ray_sphere(start, end, t.center, TARGET_RADIUS) {
+            if t.state == 0 && collide_ray_sphere(start, end, t.bottom + vec3(0.0, 0.0, TARGET_RADIUS), TARGET_RADIUS) {
                 t.state = 1;
                 was_hit = true;
 
