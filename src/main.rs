@@ -50,7 +50,7 @@ fn main() {
     let mut terrain_view = crate::terrain_view::TerrainView::new(&gpu, &renderer, &terrain);
 
     let mut arrows = ArrowController::new(&gpu, &renderer, init_time);
-    let mut targets = TargetController::new(&gpu, &renderer, &terrain);
+    let mut targets = TargetController::new(&gpu, &renderer, &terrain, init_time);
 
     let mut grabbed = false;
     let window = &window;
@@ -93,7 +93,7 @@ fn main() {
                     WindowEvent::MouseInput {device_id: _, state: ElementState::Pressed, button: MouseButton::Left } => {
                         if window.has_focus() {
                             if grabbed {
-                                log::info!("SHOOT");
+                                //log::info!("SHOOT");
                                 arrows.shoot(&mut audio, &camera);
                             } else {
                                 let _ = window.set_cursor_grab(CursorGrabMode::Confined);
@@ -143,6 +143,7 @@ fn main() {
         arrows.tick(now, &terrain, &mut audio, &mut [
             &mut targets,
         ]);
+        targets.tick(now);
 
         let out_view = surface_tex.texture.create_view(&Default::default());
         renderer.render(&gpu, &out_view, &camera, &mut [

@@ -1,6 +1,8 @@
 struct PotInst {
-    center: vec3f,
-    state: u32,
+    // must preserve angles
+    base_point: vec3f,
+    time_hit: f32,
+    rotate: vec4f,
 }
 
 @group(1) @binding(0) var<storage, read> pots: array<PotInst>;
@@ -17,13 +19,15 @@ struct LathePoint {
 struct PotVSOut {
     @builtin(position) clip_pos: vec4f,
     @location(0) world_pos: vec3f,
-    @location(1) world_norm: vec3f,
-    @location(2) refr_z: f32,
-    @location(3) uv: vec2f,
-    @location(4) state: u32,
+    @location(1) refr_z: f32,
+    @location(2) uv: vec2f,
+    @location(3) world_norm: vec3f,
+    @location(4) world_tan: vec3f,
+    @location(5) state: u32,
 }
 
 const POT_U_DIVS: u32 = 8;
+const SMASH_TIME: f32 = 0.8;
 
 var<private> QUAD_U: array<f32, 6> = array(0, 0.5, 1, 1, 0.5, 1.5);
 var<private> QUAD_V: array<u32, 6> = array(0, 1, 0, 0, 1, 1);
@@ -42,9 +46,12 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     let local_pos = vec3f(rho * point.pos_rz.x, point.pos_rz.y);
     let norm_rz = select(point.norm2_rz, point.norm1_rz, ring_offset == 1);
     let local_norm = vec3f(rho * norm_rz.x, norm_rz.y);
+    let local_tan = vec3f(rho.y, -rho.x, 0.0);
 
     let pot = pots[inst_idx];
-    let world_pos = pot.center + local_pos;
+    let world_pos = quat_rotate(pot.rotate, local_pos) + pot.base_point;
+    let world_norm = quat_rotate(pot.rotate, local_norm);
+    let world_tan = quat_rotate(pot.rotate, local_tan);
 
     var refr_z = world_pos.z;
     if underwater {
@@ -53,10 +60,11 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     var out: PotVSOut;
     out.clip_pos = camera.matrix * vec4f(world_pos.xy, refr_z, 1.0);
     out.world_pos = world_pos;
-    out.world_norm = local_norm;
     out.refr_z = refr_z;
     out.uv = vec2f(u, point.v);
-    out.state = pot.state;
+    out.world_norm = world_norm;
+    out.world_tan = world_tan;
+    out.state = select(0u, 1u, pot.time_hit >= 0);
     return out;
 }
 

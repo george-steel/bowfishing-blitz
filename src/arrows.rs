@@ -187,7 +187,6 @@ impl ArrowController {
                     Some(h) => {
                         if i > 0 && h > test_pos.z {
                             let t = (last_pos.z - last_height) / (last_pos.z - last_height + h - test_pos.z);
-                            log::info!("Hit, t={}", t);
                             let stop_pos = last_pos + t * delta_p;
                             new_pos = stop_pos;
                             self.arrow_is_live = false;

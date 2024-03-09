@@ -32,6 +32,17 @@ impl HeightmapTerrain {
             Some(self.z_scale * self.heightmap.sample_bilinear_f32(uv, false, false))
         }
     }
+
+    pub fn normal_at(&self, xy: Vec2) -> Option<Vec3> {
+        if xy.x.abs() > self.radius || xy.y.abs() > self.radius {
+            None
+        } else {
+            let uv = xy * vec2(1.0, -1.0) / self.radius / 2.0 + 0.5;
+            let grad = self.heightmap.sample_grad_f32(uv, false, false);
+
+            Some(vec3(-grad.x, grad.y, 2.0 * self.radius / self.z_scale).normalize())
+        }
+    }
 }
 
 #[repr(C)]

@@ -4,7 +4,9 @@ use kira::sound::static_sound::StaticSoundData;
 use wgpu::{util::BufferInitDescriptor, *};
 use wgpu::util::DeviceExt;
 use rand::random;
+use std::f32::consts::TAU;
 use std::mem::size_of;
+use std::time::Instant;
 
 use crate::arrows::{collide_ray_sphere, ArrowTarget};
 use crate::audio_util::SoundAtlas;
@@ -14,7 +16,8 @@ use crate::{deferred_renderer::{DeferredRenderer, RenderObject}, gputil::*, terr
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Target {
     bottom: Vec3,
-    state: u32, // 0 is live, 1 is hit
+    time_hit: f32, // 0 is live, 1 is hit
+    orientation: Quat,
 }
 
 const NUM_TARGETS: usize = 128;
@@ -69,8 +72,8 @@ fn pot_model() -> Box<[LathePoint]> {
         LathePoint::smooth(vec2(8.0/16.0, 9.0/16.0), 1.0 - (18.0 / 28.0)*0.75, vec2(8.0, -1.0)),
         LathePoint::smooth(vec2(7.0/16.0, 5.0/16.0), 1.0 - (12.5 / 28.0)*0.75, vec2(3.0, -1.0)),
         LathePoint::smooth(vec2(6.0/16.0, 3.0/16.0), 1.0 - (9.5 / 28.0)*0.75, vec2(1.75, -1.0)),
-        LathePoint::sharp(vec2(4.0/16.0, 0.0), 1.0 - (5.0 / 28.0)*0.75, vec2(0.0, -1.0), vec2(1.0, -1.0)),
-        LathePoint::smooth(vec2(0.0, 0.0), 1.0, vec2(0.0, -1.0)),
+        LathePoint::sharp(vec2(4.0/16.0, 0.0), 1.0 - (5.0 / 28.0)*0.75, vec2(1.0, -1.0), vec2(-1.0, -3.0), ),
+        LathePoint::smooth(vec2(0.0, 1.0/16.0), 1.0, vec2(0.0, -1.0)),
     ];
     points.into_boxed_slice()
 }
@@ -85,6 +88,8 @@ pub struct TargetController {
     targets_bg: BindGroup,
     smash_sounds: SoundAtlas,
 
+    created_at: Instant,
+    updated_at: Instant,
     pub all_targets: Box<[Target]>,
     dirty: bool,
 }
@@ -97,9 +102,13 @@ impl TargetController {
             let xy = (vec2(random(), random()) - 0.5) * 2.0 * inner_radius;
             if let Some(z) = terrain.height_at(xy) {
                 if z < 0.0 {
+                    let rot_z = TAU * random::<f32>();
+                    let norm = terrain.normal_at(xy).unwrap(); //same domain as height
+                    let rot = Quat::from_rotation_arc(vec3(0.0, 0.0, 1.0), norm) * Quat::from_rotation_z(rot_z);
                     targets.push(Target {
                         bottom: vec3(xy.x, xy.y, z),
-                        state: 0,
+                        time_hit: -1.0,
+                        orientation: rot,
                     });
                 }
             }
@@ -107,7 +116,7 @@ impl TargetController {
         targets.into_boxed_slice()
     }
 
-    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer, terrain: &HeightmapTerrain) -> Self {
+    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer, terrain: &HeightmapTerrain, now: Instant) -> Self {
         let all_targets = Self::gen_targets(NUM_TARGETS, terrain, 40.0);
 
         let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
@@ -230,9 +239,15 @@ impl TargetController {
             targets_buf, targets_bg,
             smash_sounds,
 
+            created_at: now, updated_at: now,
+
             all_targets,
             dirty: true,
         }
+    }
+
+    pub fn tick(&mut self, now: Instant) {
+        self.updated_at = now;
     }
 }
 
@@ -262,11 +277,14 @@ impl ArrowTarget for TargetController {
         let mut was_hit = false;
 
         for t in self.all_targets.iter_mut() {
-            if t.state == 0 && collide_ray_sphere(start, end, t.bottom + vec3(0.0, 0.0, TARGET_RADIUS), TARGET_RADIUS) {
-                t.state = 1;
-                was_hit = true;
+            if t.time_hit < 0.0 {
+                let center = t.bottom + t.orientation.mul_vec3(vec3(0.0, 0.0, TARGET_RADIUS));
+                if collide_ray_sphere(start, end, center, TARGET_RADIUS) {
+                    t.time_hit = (self.updated_at - self.created_at).as_secs_f32();
+                    was_hit = true;
 
-                audio.play(self.smash_sounds.random_sound()).unwrap();
+                    audio.play(self.smash_sounds.random_sound()).unwrap();
+                }
             }
         }
 

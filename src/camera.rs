@@ -25,16 +25,16 @@ pub trait CameraController {
 
 
 #[derive(Copy, Clone, Debug)]
-pub struct CameraSettings {
+pub struct FreeCamSettings {
     pub lin_speed: f32, // units/s
     pub rot_speed: f32, // deg/count
     pub fov_y: f32, // deg
     pub clip_near: f32,
 }
 
-impl Default for CameraSettings {
+impl Default for FreeCamSettings {
     fn default() -> Self {
-        CameraSettings {
+        FreeCamSettings {
             lin_speed: 5.0,
             rot_speed: 0.05,
             fov_y: 45.0,
@@ -115,7 +115,7 @@ impl CameraInputAccum {
 
 #[derive(Clone, Debug)]
 pub struct FreeCam {
-    pub settings: CameraSettings,
+    pub settings: FreeCamSettings,
     pub eye_pos: Vec3,
     pub yaw: f32, // radians, 0 is towards +X
     pub pitch: f32, // radians, 0 is horizontal
@@ -127,7 +127,7 @@ pub struct FreeCam {
 impl FreeCam {
     pub const MAX_PITCH: f32 = 88.0;
 
-    pub fn new(settings: CameraSettings, eye: Vec3, yaw: f32, now: Instant) -> Self {
+    pub fn new(settings: FreeCamSettings, eye: Vec3, yaw: f32, now: Instant) -> Self {
         FreeCam {
             settings, eye_pos: eye, yaw,
             pitch: 0.0,

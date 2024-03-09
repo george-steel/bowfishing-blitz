@@ -64,3 +64,11 @@ fn refracted_z(world_pos: vec3f) -> f32 {
     let cam_dist = length(world_pos.xy - camera.eye.xy);
     return apparent_depth(cam_dist, camera.eye.z, world_pos.z);
 }
+
+// ported from glam no-sse fallback
+fn quat_rotate(q: vec4f, v: vec3f) -> vec3f { 
+	    let w = q.w;
+        let b = q.xyz;
+        let b2 = dot(b, b);
+        return v * (w * w - b2) + (b * dot(v, b) * 2.0) + (cross(b, v) * 2.0 * w);
+} 

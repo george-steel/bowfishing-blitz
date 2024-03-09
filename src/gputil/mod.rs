@@ -174,6 +174,17 @@ impl<P: Copy + Into<f32>> PlanarImage<P> {
         let s = f32::lerp(sw, se, cell_uv.x);
         f32::lerp(n, s, cell_uv.y)
     }
+
+    pub fn sample_grad_f32(&self, uv: Vec2, wrap_x: bool, wrap_y: bool) -> Vec2 {
+        let delta_u = vec2(1.0 / self.width as f32, 0.0);
+        let delta_v = vec2(0.0, 1.0 / self.height as f32);
+        let n = self.sample_bilinear_f32(uv - delta_v, wrap_x, wrap_y);
+        let s = self.sample_bilinear_f32(uv + delta_v, wrap_x, wrap_y);
+        let w = self.sample_bilinear_f32(uv - delta_u, wrap_x, wrap_y);
+        let e = self.sample_bilinear_f32(uv + delta_u, wrap_x, wrap_y);
+
+        vec2(e - w, s - n) / (2.0 * (delta_u + delta_v))
+    }
 }
 
 pub fn load_png<P: Pod + Zeroable>(path: &Path) -> ImageResult<PlanarImage<P>> {
