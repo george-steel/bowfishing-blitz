@@ -119,11 +119,11 @@ pub struct ArrowController {
     next_dead_arrow: usize,
     arrow_is_live: bool,
     //arrow_buf: Buffer,
-    updated_at: Instant,
+    updated_at: f64,
 }
 
 impl ArrowController {
-    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer, now: Instant) -> Self {
+    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer) -> Self {
         let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
             label: Some("arrows.wgsl"),
             source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(crate::shaders::ARROWS)),
@@ -239,7 +239,7 @@ impl ArrowController {
             num_dead_arrows: 0,
             next_dead_arrow: 0,
             arrow_is_live: false,
-            updated_at: now,
+            updated_at: 0.0,
         }
     }
 
@@ -254,13 +254,13 @@ impl ArrowController {
         audio.play(self.release_sounds.random_sound()).unwrap();
     }
 
-    pub fn tick(&mut self, now: Instant, terrain: &HeightmapTerrain, audio: &mut AudioManager, targets: &mut[&mut dyn ArrowTarget]) -> bool {
+    pub fn tick(&mut self, time: f64, terrain: &HeightmapTerrain, audio: &mut AudioManager, targets: &mut[&mut dyn ArrowTarget]) -> bool {
         let mut did_hit = false;
         if self.arrow_is_live {
-            let delta_t = now - self.updated_at;
+            let delta_t = time - self.updated_at;
             let live_arrow = self.all_arrows[0];
             let old_pos = live_arrow.end_pos;
-            let frame_dist = delta_t.as_secs_f32() * ARROW_SPEED;
+            let frame_dist = delta_t as f32 * ARROW_SPEED;
             let mut new_pos = old_pos + frame_dist * live_arrow.dir;
 
             let num_tests = (frame_dist / RAYMARCH_RES).ceil() as u32;
@@ -309,7 +309,7 @@ impl ArrowController {
 
             // collide with targets and water
         }
-        self.updated_at = now;
+        self.updated_at = time;
         did_hit
     }
 

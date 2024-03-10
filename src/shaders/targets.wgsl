@@ -37,6 +37,7 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     let quad_idx = (vert_idx / 6) % (POT_U_DIVS);
     let quad_corner = vert_idx % 6;
 
+    // solid of rotation
     let phi: f32 = f32(quad_idx) + QUAD_U[quad_corner] + 0.5 * f32(ring_idx % 2);
     let u = phi / f32(POT_U_DIVS);
     let rho = vec2f(cos(TAU * u), sin(TAU * u));

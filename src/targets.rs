@@ -88,8 +88,7 @@ pub struct TargetController {
     targets_bg: BindGroup,
     smash_sounds: SoundAtlas,
 
-    created_at: Instant,
-    updated_at: Instant,
+    updated_at: f64,
     pub all_targets: Box<[Target]>,
     dirty: bool,
 }
@@ -116,7 +115,7 @@ impl TargetController {
         targets.into_boxed_slice()
     }
 
-    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer, terrain: &HeightmapTerrain, now: Instant) -> Self {
+    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer, terrain: &HeightmapTerrain) -> Self {
         let all_targets = Self::gen_targets(NUM_TARGETS, terrain, 40.0);
 
         let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
@@ -227,15 +226,15 @@ impl TargetController {
             targets_buf, targets_bg,
             smash_sounds,
 
-            created_at: now, updated_at: now,
+            updated_at: 0.0,
 
             all_targets,
             dirty: true,
         }
     }
 
-    pub fn tick(&mut self, now: Instant) {
-        self.updated_at = now;
+    pub fn tick(&mut self, time: f64) {
+        self.updated_at = time;
     }
 }
 
@@ -268,7 +267,7 @@ impl ArrowTarget for TargetController {
             if t.time_hit < 0.0 {
                 let center = t.bottom + t.orientation.mul_vec3(vec3(0.0, 0.0, TARGET_RADIUS));
                 if collide_ray_sphere(start, end, center, TARGET_RADIUS) {
-                    t.time_hit = (self.updated_at - self.created_at).as_secs_f32();
+                    t.time_hit = self.updated_at as f32;
                     was_hit = true;
 
                     audio.play(self.smash_sounds.random_sound()).unwrap();

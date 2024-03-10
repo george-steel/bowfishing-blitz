@@ -3,15 +3,30 @@ use std::{f32::consts::TAU, time::Instant};
 
 use crate::camera::{Camera, CameraController};
 
+// use the compiler to parse static csv
+const RAIL_CSV: &[f32] = &include!("rail-path.csv");
 
+fn rail_points() -> Box<[Vec2]> {
+    let raw_points: &[[f32; 2]] = bytemuck::cast_slice(RAIL_CSV);
+    raw_points.iter().map(|p| {
+        let x = p[0] / 10.0 - 60.0;
+        let y = -(p[1] / 10.0 - 60.0);
+        vec2(x, y)
+    }).collect()
+}
+
+fn sample_rail(rail: &[Vec2], t: f64) -> Vec2 {
+    let x = t.fract() * (rail.len() - 1) as f64;
+    let i = x.floor() as usize;
+    rail[i].lerp(rail[i + 1], x.fract() as f32)
+}
 
 pub struct RailController {
-    center: Vec2,
-    radius: f32,
+    rail: Box<[Vec2]>,
     period: f64,
+    current_time: f64,
     pitch: f32,
     yaw: f32,
-    created_at: Instant,
     updated_at: Instant,
     mouse_accum: DVec2,
 }
@@ -37,17 +52,14 @@ impl CameraController for RailController {
             eye: eye,
             clip_near: CLIP_NEAR,
             fb_size, water_fb_size,
-            time_s: (self.updated_at - self.created_at).as_secs_f32(),
+            time_s: self.current_time as f32,
             pad: Vec3::ZERO,
         }
     }
 
     fn eye(&self) -> Vec3 {
-        let t = (self.updated_at - self.created_at).as_secs_f64();
-        let theta = ((t / self.period).fract() as f32) * TAU;
-        let x = self.center.x - self.radius * theta.cos();
-        let y = self.center.y + self.radius * theta.sin();
-        vec3(x, y, EYE_HEIGHT)
+        let xy = sample_rail(&self.rail, self.current_time / self.period);
+        vec3(xy.x, xy.y, EYE_HEIGHT)
     }
 
     fn look_dir(&self) -> Vec3 {
@@ -59,13 +71,15 @@ impl CameraController for RailController {
 
 impl RailController {
     pub fn new(now: Instant) -> Self {
+        let rail = rail_points();
+        log::info!("path has {} points", rail.len());
+
         RailController {
-            center: vec2(0.0, 0.0),
-            radius: 25.0,
-            period: 60.0,
+            rail,
+            period: 180.0,
             pitch: 0.0,
             yaw: 90.0,
-            created_at: now,
+            current_time: 0.0,
             updated_at: now,
             mouse_accum: DVec2::ZERO,
         }
@@ -75,10 +89,13 @@ impl RailController {
         self.mouse_accum += dvec2(dx, dy);
     }
 
-    pub fn tick(&mut self, now: Instant) {
+    pub fn tick(&mut self, now: Instant) -> f64 {
+        let delta_t = (now - self.updated_at).as_secs_f64();
+        self.current_time += delta_t;
         self.updated_at = now;
         self.yaw = (self.yaw - ROT_SPEED * self.mouse_accum.x as f32) % 360.0;
         self.pitch = (self.pitch - ROT_SPEED * self.mouse_accum.y as f32).clamp(-MAX_PITCH, MAX_PITCH);
         self.mouse_accum = DVec2::ZERO;
+        self.current_time
     }
 }
