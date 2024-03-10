@@ -151,18 +151,6 @@ impl TargetController {
             push_constant_ranges: &[],
         });
 
-        /*let targets_vertex_layout = VertexBufferLayout {
-            array_stride: size_of::<TargetVertex>() as u64,
-            step_mode: VertexStepMode::Vertex,
-            attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3],
-        };
-
-        let targets_vertex_buf = gpu.device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("pots_vertex_buf"),
-            contents: bytemuck::cast_slice(OCTAHEDHRON),
-            usage: BufferUsages::VERTEX,
-        });*/
-
         let target_lathe_points = pot_model();
         let target_lathe_buf = gpu.device.create_buffer_init(&BufferInitDescriptor {
             label: Some("target_lathe_buf"),

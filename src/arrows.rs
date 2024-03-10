@@ -1,4 +1,5 @@
 use std::cmp::max;
+use std::f32::consts::TAU;
 use std::mem::size_of;
 use std::num;
 use std::time::Instant;
@@ -6,12 +7,85 @@ use std::time::Instant;
 use glam::*;
 use kira::manager::AudioManager;
 use kira::sound::Sound;
+use wgpu::util::BufferInitDescriptor;
+use wgpu::util::DeviceExt;
 use wgpu::*;
 use crate::audio_util::SoundAtlas;
 use crate::deferred_renderer::*;
 use crate::gputil::*;
 use crate::camera::*;
 use crate::terrain_view::HeightmapTerrain;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct ArrowVert {
+    pos: Vec3,
+    norm: Vec3,
+    uv: Vec2,
+}
+
+fn arr_vert(pos: Vec3, norm: Vec3, uv: Vec2) -> ArrowVert {
+    ArrowVert { pos, norm: norm.normalize(), uv}
+}
+
+fn orthogonal_verts(verts: &[ArrowVert], xform: Mat3, v_low: f32, v_high: f32) -> Vec<ArrowVert> {
+    let mut out = Vec::new();
+    for v in verts {
+        out.push(ArrowVert {
+            pos: xform * v.pos,
+            norm: xform * v.norm,
+            uv: vec2(v.uv.x, v_low.lerp(v_high, v.uv.y)),
+        });
+    }
+    out
+}
+
+fn arrow_model() -> Box<[ArrowVert]> {
+    // modeled on graph paper
+    let mut out = Vec::new();
+    let arrow_quarter = [
+        // head
+        arr_vert(vec3(0.0, 0.02, 0.0), vec3(-2.0, 1.0, 4.0), vec2(0.0, 0.0)),
+        arr_vert(vec3(-0.04, -0.06, 0.0), vec3(-2.0, 0.0, 3.0), vec2(0.1, 1.0)),
+        arr_vert(vec3(0.0, -0.06, 0.02), vec3(0.0, 0.0, 1.0), vec2(0.1, 0.0)),
+        arr_vert(vec3(-0.02, -0.12, 0.0), vec3(-2.0, -1.0, -0.0), vec2(0.2, 1.0)),
+        arr_vert(vec3(0.0, -0.12, 0.02), vec3(0.0, 0.0, 1.0), vec2(0.2, 0.0)),
+        //shaft
+        arr_vert(vec3(-0.02, -0.12, 0.0), vec3(-1.0, 0.0, 0.0), vec2(0.2, 1.0)),
+        arr_vert(vec3(0.0, -1.00, 0.02), vec3(0.0, 0.0, 1.0), vec2(0.7, 0.0)),
+        arr_vert(vec3(-0.02, -1.00, 0.0), vec3(-1.0, 0.0, 0.0), vec2(0.7, 1.0)),
+        //nock
+        arr_vert(vec3(0.0, -1.01, 0.0), vec3(0.0, -1.0, 0.0), vec2(0.71, 0.0)),
+        //reset strip
+        arr_vert(Vec3::NAN, Vec3::ZERO, Vec2::NAN),
+    ];
+    // mirror with D4 symmetry
+    out.extend_from_slice(&orthogonal_verts(&arrow_quarter, Mat3::IDENTITY, 0.25, 0.5));
+    out.extend_from_slice(&orthogonal_verts(&arrow_quarter, Mat3::from_diagonal(vec3(-1.0, 1.0, -1.0)), 0.75, 1.0));
+    out.push(arr_vert(Vec3::NAN, Vec3::ZERO, Vec2::NAN)); // switch parity
+    out.extend_from_slice(&orthogonal_verts(&arrow_quarter, Mat3::from_diagonal(vec3(1.0, 1.0, -1.0)), 0.75, 0.5));
+    out.extend_from_slice(&orthogonal_verts(&arrow_quarter, Mat3::from_diagonal(vec3(-1.0, 1.0, 1.0)), 0.25, 0.0));
+
+    let fletching = [
+        arr_vert(vec3(0.0, -0.78, 0.0), vec3(2.0, 0.0, 6.0), vec2(0.8, 0.0)),
+        arr_vert(vec3(0.058, -0.81, -0.015), vec3(1.5, 1.0, 6.0), vec2(1.0, 0.0)),
+        arr_vert(vec3(0.0, -0.84, 0.0), vec3(1.0, 0.0, 6.0), vec2(0.8, 0.333)),
+        arr_vert(vec3(0.06, -0.87, -0.005), vec3(0.5, 1.0, 6.0), vec2(1.0, 0.333)),
+        arr_vert(vec3(0.0, -0.90, 0.0), vec3(0.0, 0.0, 6.0), vec2(0.8, 0.667)),
+        arr_vert(vec3(0.06, -0.93, 0.005), vec3(-0.5, 1.0, 6.0), vec2(1.0, 0.667)),
+        arr_vert(vec3(0.0, -0.96, 0.0), vec3(-1.0, 0.0, 6.0), vec2(0.8, 1.0)),
+        arr_vert(vec3(0.06, -0.99, 0.005), vec3(-1.5, 1.0, 6.0), vec2(1.0, 1.0)),
+        //needed twice for parity
+        arr_vert(Vec3::NAN, Vec3::ZERO, Vec2::NAN),
+        arr_vert(Vec3::NAN, Vec3::ZERO, Vec2::NAN),
+    ];
+    // repeat with Z3 symmetry
+    out.extend_from_slice(&fletching);
+    out.extend_from_slice(&orthogonal_verts(&fletching, Mat3::from_axis_angle(Vec3::Y, TAU / 3.0), 0.0, 1.0));
+    out.extend_from_slice(&orthogonal_verts(&fletching, Mat3::from_axis_angle(Vec3::Y, 2.0 * TAU / 3.0), 0.0, 1.0));
+
+    out.into_boxed_slice()
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -24,13 +98,15 @@ struct Arrow {
 
 const MAX_DEAD_ARROWS: usize = 64;
 const ARROW_SPEED: f32 = 50.0;
-const ARROW_LEN: f32 = 0.7;
-const MOVING_ARROW_LEN: f32 = 1.0;
+const ARROW_LEN: f32 = 1.0;
+const MOVING_ARROW_LEN: f32 = 1.5;
 const RAYMARCH_RES: f32 = 0.2;
 
 pub struct ArrowController {
     arrows_above_pipeline: RenderPipeline,
     arrows_below_pipeline: RenderPipeline,
+    arrows_model: Box<[ArrowVert]>,
+    arrows_vertex_buf: Buffer,
     arrows_buf: Buffer,
     arrows_bg: BindGroup,
 
@@ -65,6 +141,20 @@ impl ArrowController {
             ]
         });
 
+        let arrows_model = arrow_model();
+
+        let arrows_vertex_layout = VertexBufferLayout {
+            array_stride: size_of::<ArrowVert>() as u64,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x2],
+        };
+
+        let arrows_vertex_buf = gpu.device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("arrows_vertex_buf"),
+            contents: bytemuck::cast_slice(&arrows_model),
+            usage: BufferUsages::VERTEX,
+        });
+
         let arrows_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("arrows_pipeline_layout"),
             bind_group_layouts: &[
@@ -80,7 +170,7 @@ impl ArrowController {
             vertex: VertexState {
                 module: &shaders,
                 entry_point: "arrow_vert_above",
-                buffers: &[],
+                buffers: &[arrows_vertex_layout.clone()],
             },
             fragment: Some(FragmentState {
                 module: &shaders,
@@ -103,7 +193,7 @@ impl ArrowController {
             vertex: VertexState {
                 module: &shaders,
                 entry_point: "arrow_vert_below",
-                buffers: &[],
+                buffers: &[arrows_vertex_layout],
             },
             fragment: Some(FragmentState {
                 module: &shaders,
@@ -142,7 +232,7 @@ impl ArrowController {
         let all_arrows = bytemuck::zeroed_slice_box(MAX_DEAD_ARROWS + 1);
         ArrowController {
             arrows_above_pipeline, arrows_below_pipeline,
-            arrows_buf, arrows_bg,
+            arrows_model, arrows_vertex_buf, arrows_buf, arrows_bg,
             release_sounds, splish_sounds, thunk_sounds,
 
             all_arrows,
@@ -235,8 +325,9 @@ impl RenderObject for ArrowController {
         let max_inst = self.num_dead_arrows as u32 + 1;
         if min_inst != max_inst {
             pass.set_pipeline(&self.arrows_below_pipeline);
+            pass.set_vertex_buffer(0, self.arrows_vertex_buf.slice(..));
             pass.set_bind_group(1, &self.arrows_bg, &[]);
-            pass.draw(0..14, min_inst..max_inst);
+            pass.draw(0..(self.arrows_model.len() as u32), min_inst..max_inst);
         }
 
     }
@@ -245,8 +336,9 @@ impl RenderObject for ArrowController {
         let max_inst = self.num_dead_arrows as u32 + 1;
         if min_inst != max_inst {
             pass.set_pipeline(&self.arrows_above_pipeline);
+            pass.set_vertex_buffer(0, self.arrows_vertex_buf.slice(..));
             pass.set_bind_group(1, &self.arrows_bg, &[]);
-            pass.draw(0..14, min_inst..max_inst);
+            pass.draw(0..(self.arrows_model.len() as u32), min_inst..max_inst);
         }
 
     }

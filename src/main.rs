@@ -38,12 +38,12 @@ fn main() {
         "./assets/river_valley_breakdown.ogg", 
         StreamingSoundSettings::default().volume(Volume::Decibels(-6.0)));
     if let Ok(music) = music_result {
-        let _ = audio.play(music);
+        //let _ = audio.play(music);
     }
 
     let init_time = Instant::now();
-    //let mut camera = FreeCam::new(CameraSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
-    let mut camera = RailController::new(init_time);
+    let mut camera = FreeCam::new(FreeCamSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
+    //let mut camera = RailController::new(init_time);
     let mut renderer = DeferredRenderer::new(&gpu, &camera, size);
 
     let terrain = terrain_view::HeightmapTerrain::load();
@@ -64,7 +64,7 @@ fn main() {
                 Event::DeviceEvent {device_id: _, event: dev_event} => match dev_event {
                     DeviceEvent::Key(key_event) => {
                         if window.has_focus() {
-                            //camera.key(key_event.physical_key, key_event.state);
+                            camera.key(key_event.physical_key, key_event.state);
                         }
                     }
                     DeviceEvent::MouseMotion { delta: (dx, dy) } => {
