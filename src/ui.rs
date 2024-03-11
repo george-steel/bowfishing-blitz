@@ -1,5 +1,6 @@
-use std::{default, mem::size_of, sync::Arc, time::{Duration, Instant}};
+use std::{default, io::Cursor, mem::size_of, sync::Arc, time::{Duration, Instant}};
 use image::imageops::FilterType::Nearest;
+use kira::{manager::AudioManager, sound::{static_sound::{StaticSoundData, StaticSoundSettings}, streaming::{StreamingSoundData, StreamingSoundHandle, StreamingSoundSettings}, FromFileError}, tween::{Easing, Tween}, Volume};
 use wgpu::{util::{BufferInitDescriptor, DeviceExt}, *};
 use glam::*;
 
@@ -86,6 +87,10 @@ pub struct UIDisplay {
 
 
     enc_music: Arc<[u8]>,
+    playing_music: Option<StreamingSoundHandle<FromFileError>>,
+    small_bell_sound: StaticSoundData,
+    big_bell_sound: StaticSoundData,
+    whistle_sound: StaticSoundData,
 
     // for display
     old_state: GameState,
@@ -247,13 +252,20 @@ impl UIDisplay {
 
 
         let enc_music = std::fs::read("./assets/river_valley_breakdown.ogg").unwrap().into();
+        let small_bell_sound = StaticSoundData::from_file("./assets/small_bell.ogg",
+            StaticSoundSettings::default().volume(Volume::Decibels(0.0))).unwrap();
+        let big_bell_sound = StaticSoundData::from_file("./assets/big_bell.ogg",
+            StaticSoundSettings::default().volume(Volume::Decibels(0.0))).unwrap();
+        let whistle_sound = StaticSoundData::from_file("./assets/whistle.ogg",
+            StaticSoundSettings::default().volume(Volume::Decibels(0.0))).unwrap();
 
         UIDisplay {
             text_pipeline,
             title_buf, states_buf, numbers_buf,
             title_bg, states_bg, numbers_bg,
             
-            enc_music,
+            enc_music, small_bell_sound, big_bell_sound, whistle_sound,
+            playing_music: None,
 
             old_state: GameState::Title { started_at: Instant::now(), is_restart: false },
             cycle_time: 0.0,
@@ -263,11 +275,55 @@ impl UIDisplay {
         }
     }
 
-    pub fn tick(&mut self, new_state: GameState, now: Instant, camera: &RailController, arrows: &ArrowController, targets: &TargetController) {
+    pub fn tick(&mut self, audio: &mut AudioManager, new_state: GameState, now: Instant, camera: &RailController, arrows: &ArrowController, targets: &TargetController) {
+        
+
+        // state transition audio
+        match (self.old_state, new_state) {
+            (GameState::Countdown {..}, GameState::Playing) => {
+                let sound_data = StreamingSoundData::from_cursor(
+                    Cursor::new(self.enc_music.clone()),
+                    StreamingSoundSettings::default().volume(Volume::Decibels(-6.0))
+                ).unwrap();
+                let sound_handle = audio.play(sound_data).unwrap();
+                self.playing_music = Some(sound_handle);
+                audio.play(self.big_bell_sound.clone());
+                audio.play(self.small_bell_sound.clone());
+            }
+            (GameState::Title {..}, GameState::Fade {..}) => {
+                if let Some(audio_handle) = &mut self.playing_music {
+                    let _ = audio_handle.stop(Tween {
+                        start_time: kira::StartTime::Immediate,
+                        duration: Duration::from_millis(1000),
+                        easing: Easing::InOutPowf(2.0),
+                    });
+                }
+                self.playing_music = None;
+            }
+            (GameState::Playing, GameState::Finish {..}) => {
+                if let Some(audio_handle) = &mut self.playing_music {
+                    let _ = audio_handle.set_volume(Volume::Decibels(-13.0), Tween {
+                        start_time: kira::StartTime::Immediate,
+                        duration: Duration::from_millis(500),
+                        easing: Easing::InOutPowf(2.0),
+                    });
+                }
+                audio.play(self.whistle_sound.clone());
+            }
+            (GameState::Countdown {..}, GameState::Countdown {..}) => {
+                let old_countdown_num = (-self.cycle_time).ceil() as u32;
+                let countdown_num = (-camera.current_time).ceil() as u32;
+                if countdown_num > 0 && countdown_num <= 3 && countdown_num != old_countdown_num {
+                    audio.play(self.small_bell_sound.clone());
+                }
+            }
+            _ => {}
+        };
         self.cycle_time = camera.current_time;
         self.arrows_shot = arrows.arrows_shot;
         self.targets_hit = targets.targets_hit;
         self.secs_left = (GameState::GAME_PERIOD - camera.current_time).ceil() as u32;
+
         self.old_state = new_state;
     }
 }

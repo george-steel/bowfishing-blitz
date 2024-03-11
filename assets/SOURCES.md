@@ -22,7 +22,7 @@ Audio
 River Valley Breakdown
 https://incompetech.com/music/royalty-free/index.html?isrc=USUAN1300032
 
-`glass-smash.ogg`: logant547. Glass Shattering.
+`glass_smash.ogg`: logant547. Glass Shattering.
 https://freesound.org/people/logant547/sounds/677734/
 
 `water_splish.ogg`: Sheyvan. Watersplish.
@@ -30,5 +30,14 @@ https://freesound.org/people/Sheyvan/sounds/470082/
 
 `arrow_release.ogg`, `arrow_thunk.ogg`: DaleT92. Impact_Melon_with_target.wav
 https://freesound.org/people/DaleT92/sounds/207806/
-Split into separate atlases for release and hit sounds.
+
+`small_bell.ogg`: CJ4096. bell.wav
+https://freesound.org/people/CJ4096/sounds/66717/
+
+`big_bell.wav`: Mateusz_Chenc, Boxing Bell Signals.
+https://freesound.org/people/Mateusz_Chenc/sounds/520998/
+
+`whistle.ogg`: SpliceSound. Referee whistle blow, gymnasium.wav
+https://freesound.org/people/SpliceSound/sounds/218318/
+
 

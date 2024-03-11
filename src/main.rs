@@ -35,12 +35,6 @@ fn main() {
     gpu.configure_surface_target(&surface, size);
 
     let mut audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).unwrap();
-    let music_result = StreamingSoundData::from_file(
-        "./assets/river_valley_breakdown.ogg", 
-        StreamingSoundSettings::default().volume(Volume::Decibels(-6.0)));
-    if let Ok(music) = music_result {
-        let _ = audio.play(music);
-    }
 
     let init_time = Instant::now();
     let mut game_state = GameState::Title {started_at: init_time, is_restart: false };
@@ -185,7 +179,7 @@ fn main() {
             ]);
             targets.tick(time);
         }
-        ui_disp.tick(game_state, now, &camera, &arrows, &targets);
+        ui_disp.tick(&mut audio, game_state, now, &camera, &arrows, &targets);
 
         let out_view = surface_tex.texture.create_view(&Default::default());
         renderer.render(&gpu, &out_view, &camera, &mut [
