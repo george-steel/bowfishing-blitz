@@ -118,7 +118,7 @@ pub struct ArrowController {
     num_dead_arrows: usize,
     next_dead_arrow: usize,
     arrow_is_live: bool,
-    //arrow_buf: Buffer,
+    pub arrows_shot: u32,
     updated_at: f64,
 }
 
@@ -239,12 +239,22 @@ impl ArrowController {
             num_dead_arrows: 0,
             next_dead_arrow: 0,
             arrow_is_live: false,
+            arrows_shot: 0,
             updated_at: 0.0,
         }
     }
 
+    pub fn reset(&mut self) {
+        self.num_dead_arrows = 0;
+        self.next_dead_arrow = 0;
+        self.arrow_is_live = false;
+        self.arrows_shot = 0;
+        self.updated_at = 0.0;
+    }
+
     pub fn shoot(&mut self, audio: &mut AudioManager, camera: &impl CameraController) {
         self.arrow_is_live = true;
+        self.arrows_shot += 1;
         let start_pos = camera.eye() - vec3(0.0, 0.0, 0.08);
         let dir = camera.look_dir().normalize();
         let end_pos = start_pos + dir * MOVING_ARROW_LEN;
@@ -255,6 +265,10 @@ impl ArrowController {
     }
 
     pub fn tick(&mut self, time: f64, terrain: &HeightmapTerrain, audio: &mut AudioManager, targets: &mut[&mut dyn ArrowTarget]) -> bool {
+        if time <= 0.0 {
+            return false
+        }
+
         let mut did_hit = false;
         if self.arrow_is_live {
             let delta_t = time - self.updated_at;

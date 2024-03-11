@@ -90,6 +90,7 @@ pub struct TargetController {
 
     updated_at: f64,
     pub all_targets: Box<[Target]>,
+    pub targets_hit: u32,
     dirty: bool,
 }
 
@@ -227,14 +228,23 @@ impl TargetController {
             smash_sounds,
 
             updated_at: 0.0,
-
             all_targets,
+            targets_hit: 0,
             dirty: true,
         }
     }
 
+    pub fn reset(&mut self, terrain: &HeightmapTerrain) {
+        self.all_targets = Self::gen_targets(NUM_TARGETS, terrain, 40.0);
+        self.updated_at = 0.0;
+        self.targets_hit = 0;
+        self.dirty = true;
+    }
+
     pub fn tick(&mut self, time: f64) {
-        self.updated_at = time;
+        if time >= 0.0 {
+            self.updated_at = time;
+        }
     }
 }
 
@@ -269,6 +279,7 @@ impl ArrowTarget for TargetController {
                 if collide_ray_sphere(start, end, center, TARGET_RADIUS) {
                     t.time_hit = self.updated_at as f32;
                     was_hit = true;
+                    self.targets_hit += 1;
 
                     audio.play(self.smash_sounds.random_sound()).unwrap();
                 }

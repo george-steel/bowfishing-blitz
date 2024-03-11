@@ -1,4 +1,5 @@
-use bowfishing_blitz::{arrows::ArrowController, boat_rail::RailController, camera::*, deferred_renderer::*, gputil::*, targets::TargetController, *};
+use bowfishing_blitz::{arrows::ArrowController, boat_rail::RailController, camera::*, deferred_renderer::*, gputil::*, targets::TargetController, ui::{GameState, UIDisplay}, *};
+use env_logger::init;
 use kira::{manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings}, sound::streaming::{StreamingSoundData, StreamingSoundSettings}, Volume};
 
 use std::time::{Duration, Instant};
@@ -42,7 +43,9 @@ fn main() {
     }
 
     let init_time = Instant::now();
-    //let mut camera = FreeCam::new(FreeCamSettings::default(), vec3(0.0, -5.0, 3.0), 90.0, init_time);
+    let mut game_state = GameState::Title {started_at: init_time, is_restart: false };
+
+
     let mut camera = RailController::new(init_time);
     let mut renderer = DeferredRenderer::new(&gpu, &camera, size);
 
@@ -52,7 +55,8 @@ fn main() {
     let mut arrows = ArrowController::new(&gpu, &renderer);
     let mut targets = TargetController::new(&gpu, &renderer, &terrain);
 
-    let mut grabbed = false;
+    let mut ui_disp = UIDisplay::new(&gpu, &renderer);
+
     let window = &window;
     'mainloop: loop{
         let surface_result = surface.get_current_texture();
@@ -68,9 +72,13 @@ fn main() {
                         }
                     }
                     DeviceEvent::MouseMotion { delta: (dx, dy) } => {
-                        if window.has_focus() && grabbed {
-                            //log::info!("mouse {} {}", dx, dy);
-                            camera.mouse(dx, dy);
+                        if window.has_focus() {
+                            match game_state {
+                                GameState::Playing | GameState::Countdown {..} => {
+                                    camera.mouse(dx, dy);
+                                }
+                                _ => {}
+                            }
                         }
                     }
                     _ => {}
@@ -88,17 +96,34 @@ fn main() {
                     }, is_synthetic: _ }=> {
                         let _ = window.set_cursor_grab(CursorGrabMode::None);
                         window.set_cursor_visible(true);
-                        grabbed = false;
+                        match game_state {
+                            GameState::Playing => {
+                                game_state = GameState::Paused;
+                            }
+                            GameState::Countdown {..} | GameState::Fade {..} => {
+                                game_state = GameState::Title {started_at: Instant::now(), is_restart: false};
+                            }
+                            _ => {}
+                        }
                     }
-                    WindowEvent::MouseInput {device_id: _, state: ElementState::Pressed, button: MouseButton::Left } => {
+                    WindowEvent::MouseInput {device_id: _, state: ElementState::Pressed, button: MouseButton::Left} => {
                         if window.has_focus() {
-                            if grabbed {
-                                //log::info!("SHOOT");
-                                arrows.shoot(&mut audio, &camera);
-                            } else {
-                                let _ = window.set_cursor_grab(CursorGrabMode::Confined);
-                                window.set_cursor_visible(false);
-                                grabbed = true;
+                            match game_state {
+                                GameState::Playing => {
+                                    arrows.shoot(&mut audio, &camera);
+                                },
+                                GameState::Title {..} => {
+                                    let _ = window.set_cursor_grab(CursorGrabMode::Confined);
+                                    window.set_cursor_visible(false);
+                                    game_state = GameState::Fade { done_at: Instant::now() + GameState::FADE_DURATION }
+                                }
+                                GameState::Paused => {
+                                    let _ = window.set_cursor_grab(CursorGrabMode::Confined);
+                                    window.set_cursor_visible(false);
+                                    camera.unpause(Instant::now());
+                                    game_state = GameState::Playing
+                                }
+                                _ => {}
                             }
                         }
                     }
@@ -139,17 +164,35 @@ fn main() {
             }
         };
         let now = Instant::now();
-        let time = camera.tick(now);
-        arrows.tick(time, &terrain, &mut audio, &mut [
-            &mut targets,
-        ]);
-        targets.tick(time);
+        if game_state.should_reset_world(now) {
+            targets.reset(&terrain);
+            arrows.reset();
+            camera.reset(now, -GameState::COUNTDOWN_DURATION.as_secs_f64());
+        }
+        game_state.do_timeout(now);
+
+        // movement and hits continue after the finish to allow for buzzer beater shots
+        if !game_state.is_paused() {
+            let time = camera.tick(now);
+            if game_state.is_playing() && time >= GameState::GAME_PERIOD {
+                let _ = window.set_cursor_grab(CursorGrabMode::None);
+                window.set_cursor_visible(true);
+                game_state = GameState::Finish { done_at: now + GameState::FINISH_DURATION };
+            }
+
+            arrows.tick(time, &terrain, &mut audio, &mut [
+                &mut targets,
+            ]);
+            targets.tick(time);
+        }
+        ui_disp.tick(game_state, now, &camera, &arrows, &targets);
 
         let out_view = surface_tex.texture.create_view(&Default::default());
         renderer.render(&gpu, &out_view, &camera, &mut [
             &mut terrain_view,
             &mut arrows,
             &mut targets,
+            &mut ui_disp,
         ]);
         surface_tex.present();
         //window.request_redraw();

@@ -60,16 +60,22 @@ impl GPUContext {
         surface.configure(&self.device, &surface_config);
     }
 
-    pub fn load_rgbe8_texture(&self, path: &Path) -> ImageResult<wgpu::Texture> {
-        let (width, height, data) = rgbe::load_rgbe8_png_file_as_rgb9e5(path)?;
+    pub fn load_rgbe8_texture(&self, path: &str) -> ImageResult<wgpu::Texture> {
+        let (width, height, data) = rgbe::load_rgbe8_png_file_as_rgb9e5(Path::new(path.into()))?;
         let img = PlanarImage {width: width as usize, height: height as usize, data};
-        let tex = self.upload_2d_texture(path.to_str().unwrap(), wgpu::TextureFormat::Rgb9e5Ufloat, &img);
+        let tex = self.upload_2d_texture(path, wgpu::TextureFormat::Rgb9e5Ufloat, &img);
         Ok(tex)
     }
 
-    pub fn load_r16f_texture(&self, path: &Path) -> ImageResult<wgpu::Texture> {
+    pub fn load_r16f_texture(&self, path: &str) -> ImageResult<wgpu::Texture> {
         let img = load_png::<u16>(path)?;
-        let tex = self.upload_2d_texture(path.to_str().unwrap(), wgpu::TextureFormat::R16Float, &img);
+        let tex = self.upload_2d_texture(path, wgpu::TextureFormat::R16Float, &img);
+        Ok(tex)
+    }
+
+    pub fn load_r8_texture(&self, path: &str) -> ImageResult<wgpu::Texture> {
+        let img = load_png::<u8>(path)?;
+        let tex = self.upload_2d_texture(path, wgpu::TextureFormat::R8Unorm, &img);
         Ok(tex)
     }
 
@@ -93,6 +99,31 @@ impl GPUContext {
             wgpu::ImageCopyTexture{texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
             bytemuck::cast_slice(&img.data),
             wgpu::ImageDataLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(img.height as u32)},
+            size);
+        tex
+    }
+
+    pub fn upload_texture_atlas<Texel: bytemuck::Pod>(&self, label: &str, format: wgpu::TextureFormat, img: &PlanarImage<Texel>, num_tiles: u32) -> wgpu::Texture {
+        let texel_size = std::mem::size_of::<Texel>();
+        if texel_size != format.block_copy_size(None).unwrap() as usize {
+            panic!("texture format must have the same size as the data buffer element")
+        }
+
+        let height =(img.height as u32) / num_tiles;
+        let size = wgpu::Extent3d{width: img.width as u32, height, depth_or_array_layers: num_tiles};
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor{
+            label: Some(label),
+            dimension: wgpu::TextureDimension::D2,
+            size, format,
+            mip_level_count: 1,
+            sample_count: 1,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture{texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
+            bytemuck::cast_slice(&img.data),
+            wgpu::ImageDataLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(height)},
             size);
         tex
     }
@@ -187,7 +218,7 @@ impl<P: Copy + Into<f32>> PlanarImage<P> {
     }
 }
 
-pub fn load_png<P: Pod + Zeroable>(path: &Path) -> ImageResult<PlanarImage<P>> {
+pub fn load_png<P: Pod + Zeroable>(path: impl AsRef<std::path::Path>) -> ImageResult<PlanarImage<P>> {
     let file = File::open(path).map_err(ImageError::IoError)?;
     let decoder = image::codecs::png::PngDecoder::new(file)?;
     let (width, height) = decoder.dimensions();

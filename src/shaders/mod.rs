@@ -26,3 +26,8 @@ pub const TARGETS: &str = concat!(
     include_str!("noise.wgsl"),
     include_str!("targets.wgsl"),
 );
+
+pub const UI: &str = concat!(
+    include_str!("global.wgsl"),
+    include_str!("ui.wgsl"),
+);

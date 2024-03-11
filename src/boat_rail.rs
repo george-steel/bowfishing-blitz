@@ -1,7 +1,7 @@
 use glam::*;
 use std::{f32::consts::TAU, time::Instant};
 
-use crate::camera::{Camera, CameraController};
+use crate::{camera::{Camera, CameraController}, ui::GameState};
 
 // use the compiler to parse static csv
 const RAIL_CSV: &[f32] = &include!("rail-path.csv");
@@ -16,7 +16,7 @@ fn rail_points() -> Box<[Vec2]> {
 }
 
 fn sample_rail(rail: &[Vec2], t: f64) -> Vec2 {
-    let x = t.fract() * (rail.len() - 1) as f64;
+    let x = t.rem_euclid(1.0) * (rail.len() - 1) as f64;
     let i = x.floor() as usize;
     rail[i].lerp(rail[i + 1], x.fract() as f32)
 }
@@ -24,7 +24,7 @@ fn sample_rail(rail: &[Vec2], t: f64) -> Vec2 {
 pub struct RailController {
     rail: Box<[Vec2]>,
     period: f64,
-    current_time: f64,
+    pub current_time: f64,
     pitch: f32,
     yaw: f32,
     updated_at: Instant,
@@ -76,13 +76,22 @@ impl RailController {
 
         RailController {
             rail,
-            period: 180.0,
+            period: GameState::GAME_PERIOD,
             pitch: 0.0,
             yaw: 90.0,
             current_time: 0.0,
             updated_at: now,
             mouse_accum: DVec2::ZERO,
         }
+    }
+
+    pub fn reset(&mut self, now: Instant, start_time: f64) {
+        self.updated_at = now;
+        self.current_time = start_time;
+    }
+
+    pub fn unpause(&mut self, now: Instant) {
+        self.updated_at = now
     }
 
     pub fn mouse(&mut self, dx: f64, dy: f64) {

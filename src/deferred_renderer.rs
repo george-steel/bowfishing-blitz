@@ -366,7 +366,7 @@ impl DeferredRenderer {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let sky_tex = gpu.load_rgbe8_texture(Path::new("./assets/sky-equirect.rgbe8.png")).expect("Failed to load sky");
+        let sky_tex = gpu.load_rgbe8_texture("./assets/sky-equirect.rgbe8.png").expect("Failed to load sky");
         let sky_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             min_filter: wgpu::FilterMode::Linear,
             mag_filter: wgpu::FilterMode::Linear,
@@ -641,6 +641,10 @@ impl DeferredRenderer {
             lighting_pass.set_bind_group(1, &self.gbuffer_bind_group, &[]);
             lighting_pass.set_bind_group(2, &self.lighting_bind_group, &[]);
             lighting_pass.draw(0..3, 0..1);
+
+            for obj in scene.iter() {
+                obj.draw_transparent(gpu, &self, &mut lighting_pass);
+            }
         }
         gpu.queue.submit(Some(command_encoder.finish()));
     }
