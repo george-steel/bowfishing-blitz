@@ -1,7 +1,7 @@
 use std::{ops::Rem, time::Instant};
 use winit::{event::ElementState, keyboard::{KeyCode, PhysicalKey::{self, *}}};
 
-use glam::f32::*;
+use glam::*;
 
 // Camera data for GPU use.
 #[repr(C)]
@@ -15,6 +15,41 @@ pub struct Camera {
     pub water_fb_size: Vec2,
     pub time_s: f32,
     pub pad: Vec3,
+}
+
+impl Camera {
+    pub fn perspective_clipping_planes(&self) -> [Vec4; 4] {
+        let zmin = self.clip_near;
+        let nw = ((self.inv_matrix * vec4(-zmin, zmin, zmin, zmin)).xyz() - self.eye).normalize();
+        let ne = ((self.inv_matrix * vec4(zmin, zmin, zmin, zmin)).xyz() - self.eye).normalize();
+        let sw = ((self.inv_matrix * vec4(-zmin, -zmin, zmin, zmin)).xyz() - self.eye).normalize();
+        let se = ((self.inv_matrix * vec4(zmin, -zmin, zmin, zmin)).xyz() - self.eye).normalize();
+
+        let n = nw.cross(ne).normalize();
+        let w = sw.cross(nw).normalize();
+        let s = se.cross(sw).normalize();
+        let e = ne.cross(se).normalize();
+
+        [
+            (n, -n.dot(self.eye)).into(),
+            (s, -s.dot(self.eye)).into(),
+            (w, -w.dot(self.eye)).into(),
+            (e, -e.dot(self.eye)).into(),
+        ]
+    }
+}
+
+// Tests if a sphere appears in frame. Used for frustum culling
+// Subject to false positives due to refraction compensation.
+pub fn sphere_visible(planes: [Vec4; 4], center: Vec3, radius: f32) -> bool {
+    let above = (center, 1.0).into();
+    let below = vec4(center.z, center.y, center.z.max(0.0), 1.0);
+    for p in planes {
+        if p.dot(above) < -radius && p.dot(below) < -radius {
+            return false;
+        }
+    }
+    true
 }
 
 pub trait CameraController {

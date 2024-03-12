@@ -97,6 +97,7 @@ struct Arrow {
 }
 
 const MAX_DEAD_ARROWS: usize = 64;
+const MAX_LIVE_ARROWS: usize = 4;
 const ARROW_SPEED: f32 = 50.0;
 const ARROW_LEN: f32 = 1.0;
 const MOVING_ARROW_LEN: f32 = 1.5;
@@ -109,15 +110,16 @@ pub struct ArrowController {
     arrows_vertex_buf: Buffer,
     arrows_buf: Buffer,
     arrows_bg: BindGroup,
+    max_arrow_inst: u32,
 
     release_sounds: SoundAtlas,
     splish_sounds: SoundAtlas,
     thunk_sounds: SoundAtlas,
 
-    all_arrows: Box<[Arrow]>, // live arrow + ring buffer
+    dead_arrows: Box<[Arrow]>, // ring buffer
     num_dead_arrows: usize,
     next_dead_arrow: usize,
-    arrow_is_live: bool,
+    live_arrows: Vec<Arrow>,
     pub arrows_shot: u32,
     updated_at: f64,
 }
@@ -212,7 +214,7 @@ impl ArrowController {
 
         let arrows_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("arrows_buf"),
-            size: (size_of::<Arrow>() * (MAX_DEAD_ARROWS + 1)) as u64,
+            size: (size_of::<Arrow>() * (MAX_DEAD_ARROWS + MAX_LIVE_ARROWS)) as u64,
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false
         });
@@ -229,16 +231,17 @@ impl ArrowController {
         let thunk_sounds = SoundAtlas::load_with_stride("./assets/arrow_thunk.ogg", -3.0, 0.5).unwrap();
         let splish_sounds = SoundAtlas::load_with_stride("./assets/water_splish.ogg", -2.0, 1.0).unwrap();
 
-        let all_arrows = bytemuck::zeroed_slice_box(MAX_DEAD_ARROWS + 1);
+        let dead_arrows = bytemuck::zeroed_slice_box(MAX_DEAD_ARROWS);
         ArrowController {
             arrows_above_pipeline, arrows_below_pipeline,
             arrows_model, arrows_vertex_buf, arrows_buf, arrows_bg,
             release_sounds, splish_sounds, thunk_sounds,
+            max_arrow_inst: 0,
 
-            all_arrows,
+            dead_arrows,
             num_dead_arrows: 0,
             next_dead_arrow: 0,
-            arrow_is_live: false,
+            live_arrows: Vec::new(),
             arrows_shot: 0,
             updated_at: 0.0,
         }
@@ -247,20 +250,36 @@ impl ArrowController {
     pub fn reset(&mut self) {
         self.num_dead_arrows = 0;
         self.next_dead_arrow = 0;
-        self.arrow_is_live = false;
+        self.live_arrows.clear();
         self.arrows_shot = 0;
         self.updated_at = 0.0;
     }
 
     pub fn shoot(&mut self, audio: &mut AudioManager, camera: &impl CameraController) {
-        self.arrow_is_live = true;
         self.arrows_shot += 1;
-        let start_pos = camera.eye() - vec3(0.0, 0.0, 0.08);
+        let eye = camera.eye();
+        let start_pos = eye - vec3(0.0, 0.0, 0.08);
         let dir = camera.look_dir().normalize();
         let end_pos = start_pos + dir * MOVING_ARROW_LEN;
-        self.all_arrows[0] = Arrow {
+        let arrow = Arrow {
             end_pos, dir, state: 1, len: MOVING_ARROW_LEN,
         };
+
+        if self.live_arrows.len() < MAX_LIVE_ARROWS {
+            self.live_arrows.push(arrow);
+        } else {
+            // replace the furthest-away (oldest) live arrow if full
+            let mut dmax = 0.0;
+            let mut imax = 0;
+            for i in 0..self.live_arrows.len() {
+                let d = (self.live_arrows[i].end_pos - eye).length();
+                if d > dmax {
+                    dmax = d;
+                    imax = i;
+                }
+            }
+            self.live_arrows[imax] = arrow;
+        }
         audio.play(self.release_sounds.random_sound()).unwrap();
     }
 
@@ -270,9 +289,10 @@ impl ArrowController {
         }
 
         let mut did_hit = false;
-        if self.arrow_is_live {
-            let delta_t = time - self.updated_at;
-            let live_arrow = self.all_arrows[0];
+        let delta_t = time - self.updated_at;
+
+        self.live_arrows.retain_mut(|live_arrow: &mut Arrow| {
+            let mut stays_live = true;
             let old_pos = live_arrow.end_pos;
             let frame_dist = delta_t as f32 * ARROW_SPEED;
             let mut new_pos = old_pos + frame_dist * live_arrow.dir;
@@ -285,7 +305,7 @@ impl ArrowController {
                 let test_pos = old_pos + delta_p * (i as f32) ;
                 match terrain.height_at(test_pos.xy()) {
                     None => {
-                        self.arrow_is_live = false;
+                        stays_live = false;
                         break;
                     }
                     Some(h) => {
@@ -293,10 +313,10 @@ impl ArrowController {
                             let t = (last_pos.z - last_height) / (last_pos.z - last_height + h - test_pos.z);
                             let stop_pos = last_pos + t * delta_p;
                             new_pos = stop_pos;
-                            self.arrow_is_live = false;
+                            stays_live = false;
 
                             // put this arrow into the ring buffer
-                            self.all_arrows[self.next_dead_arrow + 1] = Arrow {
+                            self.dead_arrows[self.next_dead_arrow ] = Arrow {
                                 end_pos: stop_pos, state: 0, dir: live_arrow.dir, len: ARROW_LEN,
                             };
                             self.next_dead_arrow = (self.next_dead_arrow + 1) % MAX_DEAD_ARROWS;
@@ -310,9 +330,9 @@ impl ArrowController {
                     }
                 }
             }
-            self.all_arrows[0].end_pos = new_pos;
+            live_arrow.end_pos = new_pos;
 
-            if self.arrow_is_live && old_pos.z > 0.0 && new_pos.z <= 0.0 {
+            if old_pos.z > 0.0 && new_pos.z <= 0.0 {
                 audio.play(self.splish_sounds.random_sound()).unwrap();
             }
 
@@ -322,7 +342,8 @@ impl ArrowController {
             }
 
             // collide with targets and water
-        }
+            stays_live
+        });
         self.updated_at = time;
         did_hit
     }
@@ -331,28 +352,35 @@ impl ArrowController {
 
 impl RenderObject for ArrowController {
     fn prepass(&mut self, gpu: &GPUContext, renderer: &DeferredRenderer, encoder: &mut CommandEncoder) {
-        gpu.queue.write_buffer(&self.arrows_buf, 0, bytemuck::cast_slice(&self.all_arrows));
+        let planes = renderer.camera.perspective_clipping_planes();
+        let mut visible_arrows: Vec<Arrow> = self.dead_arrows.iter().copied().filter(|arr| {
+            sphere_visible(planes, arr.end_pos, 1.5 * arr.len)
+        }).collect();
+        visible_arrows.append(&mut self.live_arrows.iter().copied().filter(|arr| {
+            sphere_visible(planes, arr.end_pos, 1.5 * arr.len)
+        }).collect());
+
+        self.max_arrow_inst = visible_arrows.len() as u32;
+        if self.max_arrow_inst != 0 {
+            gpu.queue.write_buffer(&self.arrows_buf, 0, bytemuck::cast_slice(&visible_arrows));
+        }
     }
 
     fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &crate::deferred_renderer::DeferredRenderer, pass: &mut RenderPass<'a>) {
-        let min_inst = if self.arrow_is_live {0} else {1};
-        let max_inst = self.num_dead_arrows as u32 + 1;
-        if min_inst != max_inst {
+        if self.max_arrow_inst != 0 {
             pass.set_pipeline(&self.arrows_below_pipeline);
             pass.set_vertex_buffer(0, self.arrows_vertex_buf.slice(..));
             pass.set_bind_group(1, &self.arrows_bg, &[]);
-            pass.draw(0..(self.arrows_model.len() as u32), min_inst..max_inst);
+            pass.draw(0..(self.arrows_model.len() as u32), 0..self.max_arrow_inst);
         }
 
     }
     fn draw_opaque<'a>(&'a self, gpu: &GPUContext, renderer: &crate::deferred_renderer::DeferredRenderer, pass: &mut RenderPass<'a>) {
-        let min_inst = if self.arrow_is_live {0} else {1};
-        let max_inst = self.num_dead_arrows as u32 + 1;
-        if min_inst != max_inst {
+        if self.max_arrow_inst != 0  {
             pass.set_pipeline(&self.arrows_above_pipeline);
             pass.set_vertex_buffer(0, self.arrows_vertex_buf.slice(..));
             pass.set_bind_group(1, &self.arrows_bg, &[]);
-            pass.draw(0..(self.arrows_model.len() as u32), min_inst..max_inst);
+            pass.draw(0..(self.arrows_model.len() as u32), 0..self.max_arrow_inst);
         }
 
     }

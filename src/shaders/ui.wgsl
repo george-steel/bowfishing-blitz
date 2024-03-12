@@ -47,7 +47,7 @@ struct TextVSOut {
     let px_dist = 0.5 * px_scale / inst.sdf_rad;
     let sdf_val = textureSampleLevel(sdf_atlas, bilinear_sampler, uv, char, 0.0).x;
 
-    let shadow_fac = smoothstep(0.5 * (1 - inst.shadow_size), 0.5, sdf_val);
+    let shadow_fac = smoothstep(0.5 - 0.5 * inst.shadow_size, 0.5 - 0.15 * inst.shadow_size, sdf_val);
     let text_fac = smoothstep(0.5 - px_dist, 0.5 + px_dist, sdf_val);
 
     let shadow = mix(vec4f(0), inst.shadow_color, shadow_fac);

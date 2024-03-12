@@ -157,6 +157,8 @@ pub struct DeferredRenderer {
     pub global_bind_layout: BindGroupLayout,
     pub global_bind_group: BindGroup,
     pub main_camera_buf: Buffer,
+    pub camera: Camera,
+
     gbuffer_bind_layout: BindGroupLayout,
     gbuffer_bind_group: BindGroup,
     water_sampler: Sampler,
@@ -188,9 +190,10 @@ impl DeferredRenderer {
             ]
         });
 
+        let camera = camera_ctrl.camera(gbuffers.size.as_vec2(), gbuffers.water_size.as_vec2());
         let main_camera_buf = gpu.device.create_buffer_init(&BufferInitDescriptor{
             label: Some("camera_buf"),
-            contents: bytemuck::bytes_of(&camera_ctrl.camera(gbuffers.size.as_vec2(), gbuffers.water_size.as_vec2())),
+            contents: bytemuck::bytes_of(&camera),
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
@@ -455,7 +458,9 @@ impl DeferredRenderer {
         Box::new(DeferredRenderer {
             lighting_shaders,
             gbuffers,
-            global_bind_layout, global_bind_group, main_camera_buf,
+            global_bind_layout, global_bind_group,
+            main_camera_buf, camera,
+
             gbuffer_bind_layout, gbuffer_bind_group, water_sampler,
             water_gbuffer_bind_layout, water_gbuffer_bind_group,
             lighting_bind_group,
@@ -502,8 +507,8 @@ impl DeferredRenderer {
     pub fn render(&mut self, gpu: &GPUContext, out: &wgpu::TextureView, camera_ctrl: &impl CameraController, scene: &mut[&mut dyn RenderObject]) {
         let mut command_encoder = gpu.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("deferred_renderer") });
 
-        let camera = camera_ctrl.camera(self.gbuffers.size.as_vec2(), self.gbuffers.water_size.as_vec2());
-        gpu.queue.write_buffer(&self.main_camera_buf, 0, bytemuck::bytes_of(&camera));
+        self.camera = camera_ctrl.camera(self.gbuffers.size.as_vec2(), self.gbuffers.water_size.as_vec2());
+        gpu.queue.write_buffer(&self.main_camera_buf, 0, bytemuck::bytes_of(&self.camera));
 
         for obj in scene.iter_mut() {
             obj.prepass(gpu, &self, &mut command_encoder);
