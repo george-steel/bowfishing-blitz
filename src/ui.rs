@@ -302,7 +302,7 @@ impl UIDisplay {
             }
             (GameState::Playing, GameState::Finish {..}) => {
                 if let Some(audio_handle) = &mut self.playing_music {
-                    let _ = audio_handle.set_volume(Volume::Decibels(-13.0), Tween {
+                    let _ = audio_handle.set_volume(Volume::Decibels(-16.0), Tween {
                         start_time: kira::StartTime::Immediate,
                         duration: Duration::from_millis(500),
                         easing: Easing::InOutPowf(2.0),

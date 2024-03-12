@@ -21,6 +21,16 @@ fn sample_rail(rail: &[Vec2], t: f64) -> Vec2 {
     rail[i].lerp(rail[i + 1], x.fract() as f32)
 }
 
+fn sample_rail_dir(rail: &[Vec2], t: f64, window: f64) -> Vec2 {
+    let ta = t.rem_euclid(1.0) * (rail.len() - 1) as f64;
+    let tb = (ta - window).rem_euclid((rail.len() - 1) as f64);
+    let ia = ta.floor() as usize;
+    let ib = tb.floor() as usize;
+    let a = rail[ia].lerp(rail[ia + 1], ta.fract() as f32);
+    let b = rail[ib].lerp(rail[ib + 1], tb.fract() as f32);
+    (a - b).normalize()
+}
+
 pub struct RailController {
     rail: Box<[Vec2]>,
     period: f64,
@@ -63,9 +73,19 @@ impl CameraController for RailController {
     }
 
     fn look_dir(&self) -> Vec3 {
-        let yaw_rad = self.yaw.to_radians();
+        let yaw_rad = ((self.yaw + 180.0).rem_euclid(360.0) - 180.0).to_radians();
         let pitch_rad = self.pitch.to_radians();
-        Vec3::new(pitch_rad.cos() * yaw_rad.cos(), pitch_rad.cos() * yaw_rad.sin(), pitch_rad.sin())
+        let rail_xy = sample_rail_dir(&self.rail, self.current_time / self.period, 6.0);
+
+        let dir_fac = if self.current_time > self.period {
+            let dt = (self.current_time - self.period).min(10.0) / 10.0;
+            (1.0 - dt * dt * (3.0 - 2.0 * dt)) as f32 // smoothstep
+        } else {
+            1.0
+        };
+        let xy = Vec2::from_angle(yaw_rad * dir_fac).rotate(rail_xy);
+        let rz = Vec2::from_angle(pitch_rad * dir_fac);
+        Vec3::new(xy.x * rz.x, xy.y * rz.x, rz.y)
     }
 }
 
@@ -78,7 +98,7 @@ impl RailController {
             rail,
             period: GameState::GAME_PERIOD,
             pitch: 0.0,
-            yaw: 90.0,
+            yaw: 00.0,
             current_time: 0.0,
             updated_at: now,
             mouse_accum: DVec2::ZERO,
@@ -88,6 +108,9 @@ impl RailController {
     pub fn reset(&mut self, now: Instant, start_time: f64) {
         self.updated_at = now;
         self.current_time = start_time;
+        self.yaw = 0.0;
+        self.pitch = 0.0;
+        self.mouse_accum = DVec2::ZERO;
     }
 
     pub fn unpause(&mut self, now: Instant) {
