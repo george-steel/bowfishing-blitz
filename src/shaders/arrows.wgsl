@@ -102,3 +102,46 @@ fn arrow_model(vert: ArrowVSIn, inst: u32, underwater: bool) -> ArrowVSOut {
     out.depth_adj = v.world_pos.z / v.refr_z;
     return out;
 }
+
+struct Splish {
+    @location(0) center: vec2f,
+    @location(1) start_time: f32,
+}
+
+@group(1) @binding(0) var<storage, read> splish_buf: array<Splish>;
+
+struct SplishVSOut {
+    @builtin(position) clip_pos: vec4f,
+    @location(0) local_xy: vec2f,
+    @location(1) time: f32,
+}
+
+@vertex fn splish_vert(@builtin(vertex_index) vert: u32, inst: Splish) -> SplishVSOut {
+    let local_xy = vec2f(2.0 * f32(vert / 2) - 1.0, 1.0 - 2.0 * f32(vert % 2));
+    let world_pos = vec3f(inst.center + local_xy, 0.0);
+    
+    var out: SplishVSOut;
+    out.clip_pos = camera.matrix * vec4f(world_pos, 1.0);
+    out.local_xy = local_xy;
+    out.time = 0.5 * (camera.time - inst.start_time);
+    return out;
+}
+
+@fragment fn splish_frag(v: SplishVSOut) -> GBufferPoint {
+    let t_fac: f32 = (1 - v.time) * (1 - v.time);
+    let r_center = 0.8 * v.time;
+    let r = length(v.local_xy);
+    let r_delta = abs(r - r_center) * 10;
+    if r_delta > 3 {
+        discard;
+    }
+    let r_fac = exp(- r_delta * r_delta);
+    let alpha = 0.5 * t_fac * r_fac;
+
+    let dzdr = sin(TAU * 20 * (r - 1.2 * v.time));
+    let r_dir = normalize(v.local_xy);
+
+    var out: GBufferPoint;
+    out.normal = vec4f(0.5 - 0.4 * dzdr * r_dir, 0.0, alpha);
+    return out;
+}

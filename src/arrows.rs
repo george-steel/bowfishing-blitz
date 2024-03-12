@@ -1,7 +1,9 @@
 use std::cmp::max;
+use std::collections::VecDeque;
 use std::f32::consts::TAU;
 use std::mem::size_of;
 use std::num;
+use std::slice::from_ref;
 use std::time::Instant;
 
 use glam::*;
@@ -96,12 +98,21 @@ struct Arrow {
     len: f32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Splish {
+    center: Vec2,
+    start_time: f32,
+}
+
 const MAX_DEAD_ARROWS: usize = 64;
 const MAX_LIVE_ARROWS: usize = 4;
 const ARROW_SPEED: f32 = 50.0;
 const ARROW_LEN: f32 = 1.0;
 const MOVING_ARROW_LEN: f32 = 1.5;
 const RAYMARCH_RES: f32 = 0.2;
+const MAX_SPLISHES: usize = 16;
+const SPLISH_DURATION: f32 = 2.0;
 
 pub struct ArrowController {
     arrows_above_pipeline: RenderPipeline,
@@ -111,6 +122,11 @@ pub struct ArrowController {
     arrows_buf: Buffer,
     arrows_bg: BindGroup,
     max_arrow_inst: u32,
+
+    splish_pipeline: RenderPipeline,
+    splish_buf: Buffer,
+    max_splish_inst: u32,
+    all_splishes: VecDeque<Splish>,
 
     release_sounds: SoundAtlas,
     splish_sounds: SoundAtlas,
@@ -226,6 +242,69 @@ impl ArrowController {
             ]
         });
 
+        let splish_vertex_layout = VertexBufferLayout {
+            array_stride: size_of::<Splish>() as u64,
+            step_mode: VertexStepMode::Instance,
+            attributes: &vertex_attr_array![0 => Float32x2, 1 => Float32],
+        };
+        let splish_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("splish_pipeline_layout"),
+            bind_group_layouts: &[&renderer.global_bind_layout],
+            push_constant_ranges: &[],
+        });
+        // decal pipeline
+        let splish_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("splish_pipeline"),
+            layout: Some(&splish_pipeline_layout),
+            vertex: VertexState {
+                module: &shaders,
+                entry_point: "splish_vert",
+                buffers: from_ref(&splish_vertex_layout),
+            },
+            fragment: Some(FragmentState {
+                module: &shaders,
+                entry_point: "splish_frag",
+                targets: &[
+                    Some(ColorTargetState{ format: TextureFormat::Rg11b10Float, blend: None, write_mask: ColorWrites::empty() }),
+                    Some(ColorTargetState{
+                        format: TextureFormat::Rgb10a2Unorm,
+                        blend: Some(BlendState {
+                            color: BlendComponent { src_factor: BlendFactor::SrcAlpha, dst_factor: BlendFactor::OneMinusSrcAlpha, operation: BlendOperation::Add },
+                            alpha: BlendComponent { src_factor: BlendFactor::SrcAlpha, dst_factor: BlendFactor::OneMinusSrcAlpha, operation: BlendOperation::Add },
+                        }),
+                        write_mask: ColorWrites::ALL
+                    }),
+                    Some(ColorTargetState{ format: TextureFormat::Rg8Unorm, blend: None, write_mask: ColorWrites::empty() }),
+                    Some(ColorTargetState{ format: TextureFormat::R8Unorm, blend: None, write_mask: ColorWrites::empty() }),
+                    Some(ColorTargetState{ format: TextureFormat::R8Uint, blend: None, write_mask: ColorWrites::empty() }),
+                ],
+            }),
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                ..Default::default()
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: false,
+                depth_compare: CompareFunction::GreaterEqual,
+                stencil: StencilState::default(),
+                bias: DepthBiasState {
+                    constant: 16, // in ULP,
+                    slope_scale: 1.0,
+                    clamp: 0.001,
+                },
+            }),
+            multisample: MultisampleState::default(),
+            multiview: None,
+        });
+
+        let splish_buf = gpu.device.create_buffer(&BufferDescriptor {
+            label: Some("splish_buf"),
+            size: (size_of::<Splish>() * MAX_SPLISHES) as u64,
+            usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
 
         let release_sounds = SoundAtlas::load_with_stride("./assets/arrow_release.ogg", 5.0, 0.4).unwrap();
         let thunk_sounds = SoundAtlas::load_with_stride("./assets/arrow_thunk.ogg", -3.0, 0.5).unwrap();
@@ -237,6 +316,9 @@ impl ArrowController {
             arrows_model, arrows_vertex_buf, arrows_buf, arrows_bg,
             release_sounds, splish_sounds, thunk_sounds,
             max_arrow_inst: 0,
+            splish_pipeline, splish_buf,
+            all_splishes: VecDeque::new(),
+            max_splish_inst: 0,
 
             dead_arrows,
             num_dead_arrows: 0,
@@ -288,6 +370,14 @@ impl ArrowController {
             return false
         }
 
+        while let Some(s) = self.all_splishes.front() {
+            if s.start_time + SPLISH_DURATION < time as f32 {
+                self.all_splishes.pop_front();
+            } else {
+                break;
+            }
+        }
+
         let mut did_hit = false;
         let delta_t = time - self.updated_at;
 
@@ -334,6 +424,13 @@ impl ArrowController {
 
             if old_pos.z > 0.0 && new_pos.z <= 0.0 {
                 audio.play(self.splish_sounds.random_sound()).unwrap();
+                if self.all_splishes.len() >= MAX_SPLISHES {
+                    self.all_splishes.pop_front();
+                }
+                self.all_splishes.push_back(Splish {
+                    center: old_pos.xy().lerp(new_pos.xy(), old_pos.z / (old_pos.z - new_pos.z)),
+                    start_time: time as f32,
+                });
             }
 
             for target in targets.iter_mut() {
@@ -341,7 +438,6 @@ impl ArrowController {
                 did_hit = did_hit || hit_target;
             }
 
-            // collide with targets and water
             stays_live
         });
         self.updated_at = time;
@@ -364,6 +460,15 @@ impl RenderObject for ArrowController {
         if self.max_arrow_inst != 0 {
             gpu.queue.write_buffer(&self.arrows_buf, 0, bytemuck::cast_slice(&visible_arrows));
         }
+
+        let visible_splishes: Vec<Splish> = self.all_splishes.iter().copied().filter(|s| {
+            sphere_visible(planes, (s.center, 0.0).into(), 1.0)
+        }).collect();
+        self.max_splish_inst = visible_splishes.len() as u32;
+        if self.max_splish_inst != 0 {
+            log::info!("splish {}", self.max_splish_inst);
+            gpu.queue.write_buffer(&self.splish_buf, 0, bytemuck::cast_slice(&visible_splishes));
+        }
     }
 
     fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &crate::deferred_renderer::DeferredRenderer, pass: &mut RenderPass<'a>) {
@@ -381,6 +486,11 @@ impl RenderObject for ArrowController {
             pass.set_vertex_buffer(0, self.arrows_vertex_buf.slice(..));
             pass.set_bind_group(1, &self.arrows_bg, &[]);
             pass.draw(0..(self.arrows_model.len() as u32), 0..self.max_arrow_inst);
+        }
+        if self.max_splish_inst != 0 {
+            pass.set_pipeline(&self.splish_pipeline);
+            pass.set_vertex_buffer(0, self.splish_buf.slice(..));
+            pass.draw(0..4, 0..self.max_splish_inst);
         }
 
     }
