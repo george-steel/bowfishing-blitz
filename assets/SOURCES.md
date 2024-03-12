@@ -15,6 +15,8 @@ https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky
 SDF text generated using SDF Maker using renders of my own SVGs as input.
 https://jobtalle.com/SDFMaker/
 
+Font used: https://artsyomni.com/hyliaserif
+
 Audio
 -----
 
