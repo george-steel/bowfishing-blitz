@@ -1,3 +1,6 @@
+// disable windows console on release build
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use bowfishing_blitz::{arrows::ArrowController, boat_rail::RailController, camera::*, deferred_renderer::*, gputil::*, targets::TargetController, ui::{GameState, UIDisplay}, *};
 use env_logger::init;
 use kira::{manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings}, sound::streaming::{StreamingSoundData, StreamingSoundSettings}, Volume};
