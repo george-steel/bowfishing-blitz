@@ -3,6 +3,8 @@ struct PotInst {
     base_point: vec3f,
     time_hit: f32,
     rotate: vec4f,
+    colors_packed: vec3u,
+    seed: u32,
 }
 
 @group(1) @binding(0) var<storage, read> pots: array<PotInst>;
@@ -23,6 +25,9 @@ struct PotVSOut {
     @location(2) uv: vec2f,
     @location(3) world_norm: vec3f,
     @location(4) world_tan: vec3f,
+    @location(5) world_bitan: vec3f,
+    @location(6) color_a: vec3f,
+    @location(7) color_b: vec3f,
 }
 
 const POT_U_DIVS: u32 = 8;
@@ -63,7 +68,7 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
         let anchor_pos = vec3f(tri_rho * tri_point.pos_rz.x, tri_point.pos_rz.y);
         let corner_delta = local_pos - anchor_pos;
 
-        let noise = pcg3d_snorm(vec3i(vec3u(ring_idx, tri_idx, inst_idx)));
+        let noise = pcg3d_snorm(vec3i(vec3u(ring_idx, tri_idx, pot.seed)));
         let explode_delta = explode_progress * (vec3f(tri_rho * tri_point.pos_rz.x, 1.0) + 0.5 * noise);
         let exploded_pos = anchor_pos + explode_delta;
 
@@ -82,6 +87,10 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     let world_norm = quat_rotate(pot.rotate, local_norm);
     let world_tan = quat_rotate(pot.rotate, local_tan);
 
+    let color_a = unpack2x16float(pot.colors_packed.x);
+    let color_ab = unpack2x16float(pot.colors_packed.y);
+    let color_b = unpack2x16float(pot.colors_packed.z);
+    
     var refr_z = world_pos.z;
     if underwater {
         refr_z = refracted_z(world_pos);
@@ -93,6 +102,8 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     out.uv = vec2f(u, point.v);
     out.world_norm = world_norm;
     out.world_tan = world_tan;
+    out.color_a = vec3f(color_a, color_ab.x);
+    out.color_b = vec3f(color_ab.y, color_b);
     return out;
 }
 
@@ -110,7 +121,7 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     }
     let norm = normalize(v.world_norm) * select(-1.0, 1.0, is_forward);
     let checker = (floor(v.uv.x * 6) + floor(v.uv.y * 10)) % 2;
-    let albedo = select(vec3f(0.78404, 0.08819, 0.2597), vec3f(0.7), checker == 0.0) * select(0.2, 1.0, is_forward);
+    let albedo = select(v.color_a, v.color_b, checker == 0.0) * select(0.2, 1.0, is_forward);
 
     var out: GBufferPoint;
     out.albedo = vec4f(albedo, 1.0);
@@ -127,7 +138,7 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     }
     let norm = normalize(v.world_norm) * select(-1.0, 1.0, is_forward);
     let checker = (floor(v.uv.x * 6) + floor(v.uv.y * 10)) % 2;
-    let albedo = select(vec3f(0.78404, 0.08819, 0.2597), vec3f(0.7), checker == 0.0) * select(0.2, 1.0, is_forward);
+    let albedo = select(v.color_a, v.color_b, checker == 0.0) * select(0.2, 1.0, is_forward);
 
     var out: UnderwaterPoint;
     out.albedo = vec4f(albedo, 1.0);

@@ -1,15 +1,16 @@
 use glam::*;
+use half::f16;
 use kira::manager::AudioManager;
-use kira::sound::static_sound::StaticSoundData;
 use wgpu::{util::BufferInitDescriptor, *};
 use wgpu::util::DeviceExt;
-use rand::random;
+use rand::{thread_rng, Rng};
 use std::f32::consts::TAU;
 use std::mem::size_of;
 use std::time::Instant;
 
 use crate::arrows::{collide_ray_sphere, ArrowTarget};
 use crate::audio_util::SoundAtlas;
+use crate::boat_rail::LoopedRail;
 use crate::{deferred_renderer::{DeferredRenderer, RenderObject}, gputil::*, terrain_view::HeightmapTerrain};
 
 #[repr(C)]
@@ -18,6 +19,9 @@ pub struct Target {
     bottom: Vec3,
     time_hit: f32, // 0 is live, 1 is hit
     orientation: Quat,
+    color_a: [f16; 3],
+    color_b: [f16; 3],
+    seed: u32
 }
 
 const NUM_TARGETS: usize = 128;
@@ -81,6 +85,29 @@ fn pot_model() -> Box<[LathePoint]> {
 const POT_U_DIVS: u32 = 8;
 const NUM_POT_VERTS: u32 = 11 * 6 * POT_U_DIVS;
 
+fn color_rail() -> LoopedRail<Vec3> {
+    // rainbow palette
+    // https://iamkate.com/data/12-bit-rainbow/
+    LoopedRail {points: vec![
+        vec3(0.24575, 0.00582, 0.18417),
+        vec3(0.40228, 0.03304, 0.09082),
+        vec3(0.60439, 0.13263, 0.13266),
+        vec3(0.85646, 0.31808, 0.05692),
+        vec3(0.85454, 0.723, 0.00119),
+        vec3(0.31869, 0.72314, 0.0909),
+        vec3(0.05705, 0.72332, 0.24573),
+        vec3(0.05705, 0.72332, 0.24573),
+        vec3(0.0, 0.49693, 0.60383),
+        vec3(0.00033, 0.31845, 0.6031),
+        vec3(0.03299, 0.13279, 0.49739),
+        vec3(0.13277, 0.03324, 0.31803),
+    ].into_boxed_slice()}
+}
+
+fn pack_h3(v: Vec3) -> [f16; 3] {
+    [f16::from_f32(v.x), f16::from_f32(v.y), f16::from_f32(v.z)]
+}
+
 pub struct TargetController {
     targets_above_pipeline: RenderPipeline,
     targets_below_pipeline: RenderPipeline,
@@ -97,18 +124,26 @@ pub struct TargetController {
 impl TargetController {
     fn gen_targets(num_targets: usize, terrain: &HeightmapTerrain, inner_radius: f32) -> Box<[Target]> {
         let mut targets = Vec::with_capacity(num_targets);
+        let mut rng = thread_rng();
+
+        let colors = color_rail();
 
         while targets.len() < num_targets {
-            let xy = (vec2(random(), random()) - 0.5) * 2.0 * inner_radius;
+            let xy = (vec2(rng.gen(), rng.gen()) - 0.5) * 2.0 * inner_radius;
             if let Some(z) = terrain.height_at(xy) {
-                if z < 0.0 {
-                    let rot_z = TAU * random::<f32>();
+                if z < -0.1 {
+                    let rot_z: f32 = TAU * rng.gen::<f32>();
                     let norm = terrain.normal_at(xy).unwrap(); //same domain as height
                     let rot = Quat::from_rotation_arc(vec3(0.0, 0.0, 1.0), norm) * Quat::from_rotation_z(rot_z);
+                    let col_idx: f64 = rng.gen();
+                    let col_step = if rng.gen_bool(0.5) {0.33} else {-0.33};
                     targets.push(Target {
                         bottom: vec3(xy.x, xy.y, z),
                         time_hit: -1.0,
                         orientation: rot,
+                        color_a: pack_h3(colors.sample(col_idx)),
+                        color_b: pack_h3(colors.sample(col_idx + col_step)),
+                        seed: rng.gen(),
                     });
                 }
             }
