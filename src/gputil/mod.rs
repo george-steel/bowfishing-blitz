@@ -1,6 +1,7 @@
 use std::{fs::File, mem::size_of, path::Path};
 
 use image::{ImageDecoder, ImageError, ImageResult};
+use wgpu::BindGroupLayoutEntry;
 use winit::{dpi::PhysicalSize, window::Window};
 use bytemuck::{Pod, Zeroable};
 use glam::*;
@@ -79,6 +80,12 @@ impl GPUContext {
         Ok(tex)
     }
 
+    pub fn load_png_texture<P: Pod + Zeroable>(&self, path: &str, format: wgpu::TextureFormat) -> ImageResult<wgpu::Texture> {
+        let img = load_png::<P>(path)?;
+        let tex = self.upload_2d_texture(path, format, &img);
+        Ok(tex)
+    }
+
     pub fn upload_2d_texture<Texel: bytemuck::Pod>(&self, label: &str, format: wgpu::TextureFormat, img: &PlanarImage<Texel>) -> wgpu::Texture {
         let texel_size = std::mem::size_of::<Texel>();
         if texel_size != format.block_copy_size(None).unwrap() as usize {
@@ -150,6 +157,19 @@ pub fn reverse_z() -> Option<wgpu::DepthStencilState> {
         stencil: wgpu::StencilState::default(),
         bias: wgpu::DepthBiasState::default(),
     })
+}
+
+pub fn frag_tex_2d(n: u32) -> BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry{
+        binding: n,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Texture {
+            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+            view_dimension: wgpu::TextureViewDimension::D2,
+            multisampled: false
+        },
+        count: None,
+    }
 }
 
 pub fn window_size(window: &Window) -> UVec2 {

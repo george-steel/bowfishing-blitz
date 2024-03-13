@@ -25,24 +25,15 @@ struct TerrainVertexOut {
 
 @group(1) @binding(0) var<uniform> tparams: TerrainParams;
 @group(1) @binding(1) var terrain_height: texture_2d<f32>;
-@group(1) @binding(2) var terrain_sampler: sampler;
+@group(1) @binding(2) var terrain_height_sampler: sampler;
 
-const DELTA_U = vec2f(1.0 / 2048.0, 0.0);
-const DELTA_V = vec2f(0.0, 1.0 / 2048.0);
-// sample finite differences of the heightmap
-fn terrain_grad(uv: vec2f) -> vec2f {
-    let n = textureSampleLevel(terrain_height, terrain_sampler, uv - DELTA_V, 0.0).x;
-    let s = textureSampleLevel(terrain_height, terrain_sampler, uv + DELTA_V, 0.0).x;
-    let w = textureSampleLevel(terrain_height, terrain_sampler, uv - DELTA_U, 0.0).x;
-    let e = textureSampleLevel(terrain_height, terrain_sampler, uv + DELTA_U, 0.0).x;
-    return tparams.z_scale * 512.0 * vec2f(e - w, n - s) / tparams.radius;
-}
+
 
 @vertex fn terrain_mesh(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> TerrainVertexOut {
     let ij = vec2i(vec2u(inst_idx + (vert_idx % 2), vert_idx / 2));
     let uv = vec2f(0.0, 1.0) + vec2f(1.0, -1.0) * vec2f(ij) / f32(tparams.grid_size);
     let xy = tparams.radius * (2 * vec2f(ij) / f32(tparams.grid_size) - 1);
-    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_sampler, uv, 0.0).x;
+    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_height_sampler, uv, 0.0).x;
     let world_pos = vec4f(xy, z, 1);
 
     var out: TerrainVertexOut;
@@ -57,7 +48,7 @@ fn terrain_grad(uv: vec2f) -> vec2f {
     let ij = vec2i(vec2u(inst_idx + (vert_idx % 2), vert_idx / 2));
     let uv = vec2f(0.0, 1.0) + vec2f(1.0, -1.0) * vec2f(ij) / f32(tparams.grid_size);
     let xy = tparams.radius * (2 * vec2f(ij) / f32(tparams.grid_size) - 1);
-    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_sampler, uv, 0.0).x;
+    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_height_sampler, uv, 0.0).x;
     let world_pos = vec4f(xy, z, 1);
 
 
@@ -78,10 +69,58 @@ const grass_col = vec3f(0.26406, 0.46721, 0.12113);
 const beach_col = vec3f(0.45, 0.37, 0.25);
 const rock_col = vec3f(0.168, 0.171, 0.216);
 
+const DELTA_U = vec2f(1.0 / 2048.0, 0.0);
+const DELTA_V = vec2f(0.0, 1.0 / 2048.0);
+// sample finite differences of the heightmap
+fn terrain_grad(uv: vec2f) -> vec2f {
+    let n = textureSampleLevel(terrain_height, terrain_height_sampler, uv - DELTA_V, 0.0).x;
+    let s = textureSampleLevel(terrain_height, terrain_height_sampler, uv + DELTA_V, 0.0).x;
+    let w = textureSampleLevel(terrain_height, terrain_height_sampler, uv - DELTA_U, 0.0).x;
+    let e = textureSampleLevel(terrain_height, terrain_height_sampler, uv + DELTA_U, 0.0).x;
+    return tparams.z_scale * 512.0 * vec2f(e - w, n - s) / tparams.radius;
+}
+
+@group(1) @binding(3) var tex_sampler: sampler;
+@group(1) @binding(4) var grass_co_tex: texture_2d<f32>;
+@group(1) @binding(5) var grass_nr_tex: texture_2d<f32>;
+@group(1) @binding(6) var dirt_co_tex: texture_2d<f32>;
+@group(1) @binding(7) var dirt_nr_tex: texture_2d<f32>;
+@group(1) @binding(8) var rock_co_tex: texture_2d<f32>;
+@group(1) @binding(9) var rock_nr_tex: texture_2d<f32>;
+
 fn terrain_albedo(uv: vec2f, z: f32, norm: vec3f, shore: f32) -> vec3f {
     let bias: f32 = 0.0; //fbm_deriv(uv, mat2x2f(6.0, 0.0, 0.0, 6.0), 4u, oct, 0.6, 0).z;
     let flat_col = mix(beach_col - 0.1 * bias, grass_col - 0.05 * bias, smoothstep(0.0, shore, z - 0.1 * bias));
     return mix(rock_col + 0.05 * bias, flat_col, smoothstep(0.5, 0.9, norm.z + 0.1 * bias));
+}
+
+struct SolidParams {
+    co: vec4f,
+    nr: vec4f,
+}
+
+fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
+    // positive is more rocky
+    let bias = perlin_noise_deriv(xy, mat2x2f(0.5, 0, 0, 0.5), 20);
+
+    let grass_uv = (xy + 0.8 * bias.xy) / 4;
+    let dirt_uv = (xy + 0.2 * bias.yx) / 3;
+    let rock_uv = (xy - 0.4 * bias.xy) / 8;
+    // splat textures
+    let grass_co = textureSample(grass_co_tex, tex_sampler, grass_uv);
+    let grass_nr = textureSample(grass_nr_tex, tex_sampler, grass_uv);
+    let dirt_co = textureSample(dirt_co_tex, tex_sampler, dirt_uv);
+    let dirt_nr = textureSample(dirt_nr_tex, tex_sampler, dirt_uv);
+    let rock_co = textureSample(rock_co_tex, tex_sampler, rock_uv);
+    let rock_nr = textureSample(rock_nr_tex, tex_sampler, rock_uv);
+
+    let rock_fac = smoothstep(0.2, 0.8, length(norm.xy) + 0.2 * bias.z);
+    let grass_fac = smoothstep(-0.1, 0.3, z - 0.1 * bias.z);
+    
+    var params: SolidParams;
+    params.co = mix(mix(dirt_co, grass_co, grass_fac), rock_co, rock_fac);
+    params.nr = mix(mix(dirt_nr, grass_nr, grass_fac), rock_nr, rock_fac);
+    return params;
 }
 
 @fragment fn terrain_frag(v: TerrainVertexOut) -> GBufferPoint {
@@ -90,14 +129,23 @@ fn terrain_albedo(uv: vec2f, z: f32, norm: vec3f, shore: f32) -> vec3f {
     }
     let grad = terrain_grad(v.uv);
     let norm = normalize(vec3f(-grad, 1));
+    let tan_x = normalize(vec3f(1, 0, grad.x));
+    let tan_y = normalize(vec3f(0, 1, grad.y));
+    let norm_mat = mat3x3f(tan_x, tan_y, norm);
 
-    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_sampler, v.uv, 0.0).x;
-    let albedo = terrain_albedo(v.uv, z, norm, 0.2);
+    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_height_sampler, v.uv, 0.0).x;
+
+    let params = terrain_tex(v.world_pos.xy, z, norm);
+
+    let albedo = params.co.xyz;
+    let frag_norm = norm_mat * params.nr.xyz;
 
     var out: GBufferPoint;
+    //out.albedo = vec4f(0.5 + 0.5 * bias.z, 0.5 - 0.5 * bias.z, 0.0, 1.0);
     out.albedo = vec4f(albedo, 1.0);
-    out.normal = vec4f(0.5 * (norm + 1), 1.0);
-    out.occlusion = 1.0;
+    out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
+    out.occlusion = params.co.w;
+    out.rough_metal = vec2f(params.nr.w, 0.0);
     out.mat_type = MAT_SOLID;
     return out;
 }
@@ -109,14 +157,22 @@ fn terrain_albedo(uv: vec2f, z: f32, norm: vec3f, shore: f32) -> vec3f {
 
     let grad = terrain_grad(v.uv);
     let norm = normalize(vec3f(-grad, 1));
+    let tan_x = normalize(vec3f(1, 0, grad.x));
+    let tan_y = normalize(vec3f(0, 1, grad.y));
+    let norm_mat = mat3x3f(tan_x, tan_y, norm);
 
-    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_sampler, v.uv, 0.0).x;
-    let albedo = terrain_albedo(v.uv, z, norm, 0.2);
+    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_height_sampler, v.uv, 0.0).x;
+
+    let params = terrain_tex(v.world_pos.xy, z, norm);
+
+    let albedo = params.co.xyz;
+    let frag_norm = norm_mat * params.nr.xyz;
 
     var out: UnderwaterPoint;
     out.albedo = vec4f(albedo, 1.0);
-    out.normal = vec4f(0.5 * (norm + 1), 1.0);
-    out.occlusion = 1.0;
+    out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
+    out.occlusion = params.co.w;
+    out.rough_metal = vec2f(params.nr.w, 0.0);
     out.mat_type = MAT_SOLID;
     out.depth_adj = v.world_pos.z / v.refract_pos.z;
     return out;
