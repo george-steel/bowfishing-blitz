@@ -12,6 +12,11 @@ Textures
 Poly Haven: Kloofendal 48d Partly Cloudy (Pure Sky)
 https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky
 
+Terrain textures (grass, dirt, rock) my Lennart Demes (AmbientCG).
+https://ambientcg.com/view?id=Ground037
+https://ambientcg.com/view?id=Ground071
+https://ambientcg.com/view?id=Rock050
+
 SDF text generated using SDF Maker using renders of my own SVGs as input.
 https://jobtalle.com/SDFMaker/
 
