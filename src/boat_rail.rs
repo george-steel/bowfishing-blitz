@@ -6,33 +6,50 @@ use crate::{camera::{Camera, CameraController}, ui::GameState};
 // use the compiler to parse static csv
 const RAIL_CSV: &[f32] = &include!("rail-path.csv");
 
-fn rail_points() -> Box<[Vec2]> {
+pub struct LoopedRail {
+    pub points: Box<[Vec2]>
+}
+
+impl LoopedRail {
+    fn get_point(&self, pos: f64) -> Vec2 {
+        let n = self.points.len();
+        let i = pos.floor().rem_euclid(n as f64) as usize;
+        let t = pos.rem_euclid(1.0) as f32;
+        catmull_rom(t, self.points[(i + n - 1) % n], self.points[i], self.points[(i + 1) % n], self.points[(i + 2) % n])
+    }
+
+    pub fn sample(&self, u: f64) -> Vec2 {
+        self.get_point(u * self.points.len() as f64)
+    }
+
+    pub fn sample_dir(&self, u: f64, window: f64) -> Vec2 {
+        let n = self.points.len() as f64;
+        (self.get_point(u * n) - self.get_point(u * n - window)).normalize()
+    }
+}
+
+fn catmull_rom(t:f32, a: Vec2, x:Vec2, y:Vec2, b: Vec2) -> Vec2 {
+    let tx = (y - a) / 2.0;
+    let ty = (b - x) / 2.0;
+    let p = t * t * (3.0 - 2.0 * t);
+    let my = t * t * (t - 1.0);
+    let mx = t * (t - 1.0) * (t - 1.0);
+
+    p*y + (1.0-p)*x + mx*tx + my*ty
+}
+
+fn rail_points() -> LoopedRail {
     let raw_points: &[[f32; 2]] = bytemuck::cast_slice(RAIL_CSV);
-    raw_points.iter().map(|p| {
+    let points = raw_points.iter().map(|p| {
         let x = p[0] / 10.0 - 60.0;
         let y = -(p[1] / 10.0 - 60.0);
         vec2(x, y)
-    }).collect()
-}
-
-fn sample_rail(rail: &[Vec2], t: f64) -> Vec2 {
-    let x = t.rem_euclid(1.0) * (rail.len() - 1) as f64;
-    let i = x.floor() as usize;
-    rail[i].lerp(rail[i + 1], x.fract() as f32)
-}
-
-fn sample_rail_dir(rail: &[Vec2], t: f64, window: f64) -> Vec2 {
-    let ta = t.rem_euclid(1.0) * (rail.len() - 1) as f64;
-    let tb = (ta - window).rem_euclid((rail.len() - 1) as f64);
-    let ia = ta.floor() as usize;
-    let ib = tb.floor() as usize;
-    let a = rail[ia].lerp(rail[ia + 1], ta.fract() as f32);
-    let b = rail[ib].lerp(rail[ib + 1], tb.fract() as f32);
-    (a - b).normalize()
+    }).collect();
+    LoopedRail {points}
 }
 
 pub struct RailController {
-    rail: Box<[Vec2]>,
+    rail: LoopedRail,
     period: f64,
     pub current_time: f64,
     pitch: f32,
@@ -68,14 +85,14 @@ impl CameraController for RailController {
     }
 
     fn eye(&self) -> Vec3 {
-        let xy = sample_rail(&self.rail, self.current_time / self.period);
+        let xy = self.rail.sample(self.current_time / self.period);
         vec3(xy.x, xy.y, EYE_HEIGHT)
     }
 
     fn look_dir(&self) -> Vec3 {
         let yaw_rad = ((self.yaw + 180.0).rem_euclid(360.0) - 180.0).to_radians();
         let pitch_rad = self.pitch.to_radians();
-        let rail_xy = sample_rail_dir(&self.rail, self.current_time / self.period, 6.0);
+        let rail_xy = self.rail.sample_dir(self.current_time / self.period, 6.0);
 
         let dir_fac = if self.current_time > self.period {
             let dt = (self.current_time - self.period).min(10.0) / 10.0;
@@ -92,7 +109,7 @@ impl CameraController for RailController {
 impl RailController {
     pub fn new(now: Instant) -> Self {
         let rail = rail_points();
-        log::info!("path has {} points", rail.len());
+        log::info!("path has {} points", rail.points.len());
 
         RailController {
             rail,
