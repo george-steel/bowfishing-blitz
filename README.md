@@ -8,6 +8,7 @@ Made for Acerola Jam 0.
 Be careful, *water refracts light, but it does **not** refract arrows.* 
 When shooting, remember that objects in water are deeper than they appear, and adjust your aim accordingly. 
 
+[Builds available on itch.io](https://george-steel.itch.io/bowfishing-blitz).
 
 Credits
 -------
