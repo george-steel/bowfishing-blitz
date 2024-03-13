@@ -101,11 +101,11 @@ struct SolidParams {
 
 fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     // positive is more rocky
-    let bias = perlin_noise_deriv(xy, mat2x2f(0.5, 0, 0, 0.5), 20);
+    let bias = perlin_noise_deriv(xy, mat2x2f(0.3, 0, 0, 0.3), 20);
 
-    let grass_uv = (xy + 0.8 * bias.xy) / 4;
+    let grass_uv = (xy + 1.5 * bias.xy) / 4;
     let dirt_uv = (xy + 0.2 * bias.yx) / 3;
-    let rock_uv = (xy - 0.4 * bias.xy) / 8;
+    let rock_uv = (xy - 1.2 * bias.xy) / 8;
     // splat textures
     let grass_co = textureSample(grass_co_tex, tex_sampler, grass_uv);
     let grass_nr = textureSample(grass_nr_tex, tex_sampler, grass_uv);
@@ -117,8 +117,10 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     let rock_fac = smoothstep(0.2, 0.8, length(norm.xy) + 0.2 * bias.z);
     let grass_fac = smoothstep(-0.3, 0.6, z - 0.1 * bias.z);
     
+    let checker = (floor(10 * grass_uv.x) + floor(10 * grass_uv.y)) % 2;
     var params: SolidParams;
     params.co = mix(mix(dirt_co, grass_co, grass_fac), rock_co, rock_fac);
+    //params.co = select(vec4f(1, 0, 0, 1), vec4f(0, 1, 0, 1), checker == 0.0);
     params.nr = mix(mix(dirt_nr, grass_nr, grass_fac), rock_nr, rock_fac);
     return params;
 }
