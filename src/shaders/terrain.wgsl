@@ -140,7 +140,7 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     let params = terrain_tex(v.world_pos.xy, z, norm);
 
     let albedo = params.co.xyz;
-    let frag_norm = norm_mat * params.nr.xyz;
+    let frag_norm = norm_mat * (2 * params.nr.xyz - 1);
 
     var out: GBufferPoint;
     //out.albedo = vec4f(0.5 + 0.5 * bias.z, 0.5 - 0.5 * bias.z, 0.0, 1.0);
@@ -168,7 +168,7 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     let params = terrain_tex(v.world_pos.xy, z, norm);
 
     let albedo = params.co.xyz;
-    let frag_norm = norm_mat * params.nr.xyz;
+    let frag_norm = norm_mat * (2 * params.nr.xyz - 1);
 
     var out: UnderwaterPoint;
     out.albedo = vec4f(albedo, 1.0);

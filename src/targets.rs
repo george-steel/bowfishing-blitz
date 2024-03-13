@@ -69,7 +69,7 @@ fn pot_model() -> Box<[LathePoint]> {
         LathePoint::smooth(vec2(3.0/16.0, 16.0/16.0), 1.0/16.0, vec2(-1.0, 0.0)),
         LathePoint::smooth(vec2(4.0/16.0, 17.0/16.0), 2.0/16.0, vec2(0.0, 1.0)),
         LathePoint::smooth(vec2(5.0/16.0, 16.0/16.0), 3.0/16.0, vec2(1.0, 0.0)),
-        LathePoint::sharp(vec2(4.0/16.0, 15.0/16.0), 0.25, vec2(1.0, 2.0), vec2(0.0, -1.0)),
+        LathePoint::sharp(vec2(4.0/16.0, 15.0/16.0), 0.25, vec2(0.0, -1.0), vec2(1.0, 2.0)),
 
         LathePoint::smooth(vec2(7.0/16.0, 13.0/16.0), 1.0 - (23.5 / 28.0)*0.75, vec2(1.0, 1.0)),
         LathePoint::smooth(vec2(8.0/16.0, 11.0/16.0), 1.0 - (20.5 / 28.0)*0.75, vec2(4.0, 1.0)),
@@ -174,6 +174,24 @@ impl TargetController {
                     ty: BindingType::Buffer { ty: BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture { sample_type: TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::D2, multisampled: false },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture { sample_type: TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::D2, multisampled: false },
+                    count: None,
+                },
             ]
         });
 
@@ -245,12 +263,27 @@ impl TargetController {
             usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
             mapped_at_creation: false
         });
+
+        let tex_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
+            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..wgpu::SamplerDescriptor::default()
+        });
+
+        let pot_co_tex = gpu.load_png_texture::<u32>("./assets/pot-co.png", TextureFormat::Rgba8UnormSrgb).unwrap();
+        let pot_nr_tex = gpu.load_png_texture::<u32>("./assets/pot-nr.png", TextureFormat::Rgba8Unorm).unwrap();
+
         let targets_bg = gpu.device.create_bind_group(&BindGroupDescriptor {
             label: Some("pots_bg"),
             layout: &targets_bg_layout,
             entries: &[
                 BindGroupEntry {binding: 0, resource: targets_buf.as_entire_binding()},
                 BindGroupEntry {binding: 1, resource: target_lathe_buf.as_entire_binding()},
+                BindGroupEntry {binding: 2, resource: BindingResource::Sampler(&tex_sampler)},
+                BindGroupEntry {binding: 3, resource: BindingResource::TextureView(&pot_co_tex.create_view(&Default::default()))},
+                BindGroupEntry {binding: 4, resource: BindingResource::TextureView(&pot_nr_tex.create_view(&Default::default()))},
             ]
         });
 

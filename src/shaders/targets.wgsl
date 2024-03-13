@@ -28,6 +28,7 @@ struct PotVSOut {
     @location(5) world_bitan: vec3f,
     @location(6) color_a: vec3f,
     @location(7) color_b: vec3f,
+    @location(8) explode_progress: f32,
 }
 
 const POT_U_DIVS: u32 = 8;
@@ -52,13 +53,14 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     var local_pos = vec3f(rho * point.pos_rz.x, point.pos_rz.y);
     let norm_rz = select(point.norm2_rz, point.norm1_rz, ring_offset == 1);
     var local_norm = vec3f(rho * norm_rz.x, norm_rz.y);
-    var local_tan = vec3f(rho.y, -rho.x, 0.0);
+    var local_tan = vec3f(-rho.y, rho.x, 0.0);
 
     let pot = pots[inst_idx];
 
+    var explode_progress:f32 = 0;
     if pot.time_hit > 0 {
         let explode_time = saturate((camera.time - pot.time_hit) / EXPLODE_TIME);
-        let explode_progress = (2.0 - explode_time) * explode_time;
+        explode_progress = (2.0 - explode_time) * explode_time;
         let sink_progress = smoothstep(0.0, 1.0, (camera.time - pot.time_hit) / SINK_TIME);
 
         let tri_idx = (vert_idx / 3) % (2 * POT_U_DIVS);
@@ -102,8 +104,10 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     out.uv = vec2f(u, point.v);
     out.world_norm = world_norm;
     out.world_tan = world_tan;
+    out.world_bitan = cross(world_norm, world_tan);
     out.color_a = vec3f(color_a, color_ab.x);
     out.color_b = vec3f(color_ab.y, color_b);
+    out.explode_progress = explode_progress;
     return out;
 }
 
@@ -115,19 +119,38 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     return pot_vert(vert, inst, true);
 }
 
+@group(1) @binding(2) var tex_sampler: sampler;
+@group(1) @binding(3) var pot_co_tex: texture_2d<f32>;
+@group(1) @binding(4) var pot_nr_tex: texture_2d<f32>;
+
 @fragment fn pot_frag_above(v: PotVSOut, @builtin(front_facing) is_forward: bool) -> GBufferPoint {
     if camera.eye.z > 0 && v.world_pos.z < 0 {
         discard;
     }
-    let norm = normalize(v.world_norm) * select(-1.0, 1.0, is_forward);
-    let checker = (floor(v.uv.x * 6) + floor(v.uv.y * 10)) % 2;
-    let albedo = select(v.color_a, v.color_b, checker == 0.0) * select(0.2, 1.0, is_forward);
+    let back_corr = select(-1.0, 1.0, is_forward);
+    let norm = normalize(v.world_norm) * back_corr;
+    let tan = normalize(v.world_tan);
+    let bitan = normalize(v.world_bitan) * back_corr;
+    let norm_mat = mat3x3f(tan, bitan, norm);
+
+    let col_mat = mat3x3f(v.color_a, v.color_b, vec3f(1.0));
+
+    let uv = vec2f(3 * v.uv.x, 0.5 * select(2 - v.uv.y, v.uv.y, is_forward));
+
+    let co = textureSample(pot_co_tex, tex_sampler, uv);
+    let nr = textureSample(pot_nr_tex, tex_sampler, uv);
+    var albedo = col_mat * co.xyz;
+    let frag_norm = norm_mat * normalize(2 * nr.xyz - 1);
+
+    if !is_forward {
+        albedo *= mix(1.0, mix(0.2, 1.0, v.explode_progress), smoothstep(0.25, 0.35, v.uv.x));
+    }
 
     var out: GBufferPoint;
     out.albedo = vec4f(albedo, 1.0);
-    out.normal = vec4f(0.5 * (norm + 1), 1.0);
-    out.rough_metal = vec2f(0.0, 0.0);
-    out.occlusion = 1.0;
+    out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
+    out.rough_metal = vec2f(nr.w, 0.0);
+    out.occlusion = co.w;
     out.mat_type = MAT_SOLID;
     return out;
 }
@@ -136,15 +159,30 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     if v.world_pos.z > 0 {
         discard;
     }
-    let norm = normalize(v.world_norm) * select(-1.0, 1.0, is_forward);
-    let checker = (floor(v.uv.x * 6) + floor(v.uv.y * 10)) % 2;
-    let albedo = select(v.color_a, v.color_b, checker == 0.0) * select(0.2, 1.0, is_forward);
+    let back_corr = select(-1.0, 1.0, is_forward);
+    let norm = normalize(v.world_norm) * back_corr;
+    let tan = normalize(v.world_tan);
+    let bitan = normalize(v.world_bitan) * back_corr;
+    let norm_mat = mat3x3f(tan, bitan, norm);
+
+    let col_mat = mat3x3f(v.color_a, v.color_b, vec3f(1.0));
+
+    let uv = vec2f(3 * v.uv.x, 0.5 * select(2 - v.uv.y, v.uv.y, is_forward));
+
+    let co = textureSample(pot_co_tex, tex_sampler, uv);
+    let nr = textureSample(pot_nr_tex, tex_sampler, uv);
+    var albedo = col_mat * co.xyz;
+    let frag_norm = norm_mat * normalize(2 * nr.xyz - 1);
+
+    if !is_forward {
+        albedo *= mix(1.0, mix(0.2, 1.0, v.explode_progress), smoothstep(0.25, 0.35, v.uv.x));
+    }
 
     var out: UnderwaterPoint;
     out.albedo = vec4f(albedo, 1.0);
-    out.normal = vec4f(0.5 * (norm + 1), 1.0);
-    out.rough_metal = vec2f(0.0, 0.0);
-    out.occlusion = 1.0;
+    out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
+    out.rough_metal = vec2f(nr.w, 0.0);
+    out.occlusion = co.w;
     out.mat_type = MAT_SOLID;
     out.depth_adj = v.world_pos.z / v.refr_z;
     return out;
