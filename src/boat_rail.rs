@@ -92,7 +92,7 @@ impl CameraController for RailController {
     fn look_dir(&self) -> Vec3 {
         let yaw_rad = ((self.yaw + 180.0).rem_euclid(360.0) - 180.0).to_radians();
         let pitch_rad = self.pitch.to_radians();
-        let rail_xy = self.rail.sample_dir(self.current_time / self.period, 6.0);
+        let rail_xy = self.rail.sample_dir(self.current_time / self.period, 2.0);
 
         let dir_fac = if self.current_time > self.period {
             let dt = (self.current_time - self.period).min(10.0) / 10.0;
