@@ -115,7 +115,7 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     let rock_nr = textureSample(rock_nr_tex, tex_sampler, rock_uv);
 
     let rock_fac = smoothstep(0.2, 0.8, length(norm.xy) + 0.2 * bias.z);
-    let grass_fac = smoothstep(-0.1, 0.3, z - 0.1 * bias.z);
+    let grass_fac = smoothstep(-0.3, 0.6, z - 0.1 * bias.z);
     
     var params: SolidParams;
     params.co = mix(mix(dirt_co, grass_co, grass_fac), rock_co, rock_fac);

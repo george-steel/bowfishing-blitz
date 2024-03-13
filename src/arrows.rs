@@ -466,7 +466,6 @@ impl RenderObject for ArrowController {
         }).collect();
         self.max_splish_inst = visible_splishes.len() as u32;
         if self.max_splish_inst != 0 {
-            log::info!("splish {}", self.max_splish_inst);
             gpu.queue.write_buffer(&self.splish_buf, 0, bytemuck::cast_slice(&visible_splishes));
         }
     }
