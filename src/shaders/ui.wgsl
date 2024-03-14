@@ -53,3 +53,22 @@ struct TextVSOut {
     let shadow = mix(vec4f(0), inst.shadow_color, shadow_fac);
     return mix(shadow, inst.color, text_fac);
 }
+
+struct BlackoutVSOut {
+    @builtin(position) pos: vec4f,
+    @location(0) alpha: f32,
+}
+
+@vertex fn blackout_vert(@builtin(vertex_index) idx: u32, @builtin(instance_index) inst: u32) -> BlackoutVSOut {
+    let u = f32(idx % 2);
+    let v = f32(idx / 2);
+    let xy = vec2f(4*u -1, 4*v-1);
+    var out: BlackoutVSOut;
+    out.pos = vec4f(xy, 1, 1);
+    out.alpha = smoothstep(0.0, 900.0, f32(inst));
+    return out;
+}
+
+@fragment fn blackout_frag(v: BlackoutVSOut) -> @location(0) vec4f {
+    return vec4f(0, 0, 0, v.alpha);
+}

@@ -78,6 +78,7 @@ struct SDFTextParams {
 
 pub struct UIDisplay {
     text_pipeline: RenderPipeline,
+    blackout_pipeline: RenderPipeline,
     title_buf: Buffer,
     states_buf: Buffer,
     numbers_buf: Buffer,
@@ -98,6 +99,7 @@ pub struct UIDisplay {
     arrows_shot: u32,
     targets_hit: u32,
     secs_left: u32,
+    updated_at: Instant,
 }
 
 impl UIDisplay {
@@ -163,6 +165,34 @@ impl UIDisplay {
             fragment: Some(FragmentState {
                 module: &shaders,
                 entry_point: "sdf_text_frag",
+                targets: &[Some(ColorTargetState{
+                    format: gpu.output_format,
+                    blend: Some(BlendState {
+                        color: BlendComponent::OVER,
+                        alpha: BlendComponent::OVER,
+                    }),
+                    write_mask: ColorWrites::ALL })],
+            }),
+            depth_stencil: None,
+            multisample: Default::default(),
+            multiview: None,
+        });
+
+        let blackout_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("blackout_pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shaders,
+                entry_point: "blackout_vert",
+                buffers: &[],
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            fragment: Some(FragmentState {
+                module: &shaders,
+                entry_point: "blackout_frag",
                 targets: &[Some(ColorTargetState{
                     format: gpu.output_format,
                     blend: Some(BlendState {
@@ -260,7 +290,7 @@ impl UIDisplay {
             StaticSoundSettings::default().volume(Volume::Decibels(0.0))).unwrap();
 
         UIDisplay {
-            text_pipeline,
+            text_pipeline, blackout_pipeline,
             title_buf, states_buf, numbers_buf,
             title_bg, states_bg, numbers_bg,
             
@@ -272,6 +302,7 @@ impl UIDisplay {
             arrows_shot: 0,
             targets_hit: 0,
             secs_left: 0,
+            updated_at: Instant::now(),
         }
     }
 
@@ -325,6 +356,7 @@ impl UIDisplay {
         self.secs_left = (GameState::GAME_PERIOD - camera.current_time).ceil() as u32;
 
         self.old_state = new_state;
+        self.updated_at = now;
     }
 }
 
@@ -483,5 +515,25 @@ impl RenderObject for UIDisplay {
             pass.draw(0..4, 0..(numbers_data.len() as u32));
         }
 
+        let maybe_blackout = match self.old_state {
+            GameState::Fade { done_at } => {
+                let t = (done_at - self.updated_at).as_secs_f32() / GameState::FADE_DURATION.as_secs_f32();
+                Some(1.0 - t)
+            }
+            GameState::Countdown { done_at } => {
+                let t =  (self.updated_at + GameState::COUNTDOWN_DURATION - done_at).as_secs_f32();
+                if t < 0.5 {
+                    Some(1.0 - 2.0 * t)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        if let Some(alpha) = maybe_blackout {
+            let inst = (1000.0 * alpha).round() as u32;
+            pass.set_pipeline(&self.blackout_pipeline);
+            pass.draw(0..3, inst..(inst+1)); // use the instance number as the single parameter
+        }
     }
 }
