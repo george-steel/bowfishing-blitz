@@ -11,6 +11,7 @@ use std::time::Instant;
 use crate::arrows::{collide_ray_sphere, ArrowTarget};
 use crate::audio_util::SoundAtlas;
 use crate::boat_rail::LoopedRail;
+use crate::camera::sphere_visible;
 use crate::{deferred_renderer::{DeferredRenderer, RenderObject}, gputil::*, terrain_view::HeightmapTerrain};
 
 #[repr(C)]
@@ -114,11 +115,11 @@ pub struct TargetController {
     targets_buf: Buffer,
     targets_bg: BindGroup,
     smash_sounds: SoundAtlas,
+    max_target_inst: u32,
 
     updated_at: f64,
     pub all_targets: Box<[Target]>,
     pub targets_hit: u32,
-    dirty: bool,
 }
 
 impl TargetController {
@@ -294,11 +295,11 @@ impl TargetController {
             targets_above_pipeline, targets_below_pipeline,
             targets_buf, targets_bg,
             smash_sounds,
+            max_target_inst: 0,
 
             updated_at: 0.0,
             all_targets,
             targets_hit: 0,
-            dirty: true,
         }
     }
 
@@ -306,7 +307,6 @@ impl TargetController {
         self.all_targets = Self::gen_targets(NUM_TARGETS, terrain, 40.0);
         self.updated_at = 0.0;
         self.targets_hit = 0;
-        self.dirty = true;
     }
 
     pub fn tick(&mut self, time: f64) {
@@ -318,22 +318,32 @@ impl TargetController {
 
 impl RenderObject for TargetController {
     fn prepass(&mut self, gpu: &GPUContext, renderer: &DeferredRenderer, encoder: &mut CommandEncoder) {
-        if self.dirty {
-            gpu.queue.write_buffer(&self.targets_buf, 0, bytemuck::cast_slice(&self.all_targets));
+        let planes = renderer.camera.perspective_clipping_planes();
+
+        let mut visible_targets: Vec<Target> = self.all_targets.iter().copied().filter(|t| {
+            sphere_visible(planes, t.bottom, 3.0)
+        }).collect();
+
+        self.max_target_inst = visible_targets.len() as u32;
+        if self.max_target_inst != 0 {
+            gpu.queue.write_buffer(&self.targets_buf, 0, bytemuck::cast_slice(&visible_targets));
         }
-        self.dirty = false;
     }
 
     fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {
-        pass.set_pipeline(&self.targets_below_pipeline);
-        pass.set_bind_group(1, &self.targets_bg, &[]);
-        pass.draw(0..NUM_POT_VERTS, 0..(NUM_TARGETS as u32));
+        if self.max_target_inst != 0 {
+            pass.set_pipeline(&self.targets_below_pipeline);
+            pass.set_bind_group(1, &self.targets_bg, &[]);
+            pass.draw(0..NUM_POT_VERTS, 0..self.max_target_inst);
+        }
     }
 
     fn draw_opaque<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {
-        pass.set_pipeline(&self.targets_above_pipeline);
-        pass.set_bind_group(1, &self.targets_bg, &[]);
-        pass.draw(0..NUM_POT_VERTS, 0..(NUM_TARGETS as u32));
+        if self.max_target_inst != 0 {
+            pass.set_pipeline(&self.targets_above_pipeline);
+            pass.set_bind_group(1, &self.targets_bg, &[]);
+            pass.draw(0..NUM_POT_VERTS, 0..self.max_target_inst);
+        }
     }
 }
 
@@ -354,7 +364,6 @@ impl ArrowTarget for TargetController {
             }
         }
 
-        self.dirty = self.dirty || was_hit;
         was_hit
     }
 }
