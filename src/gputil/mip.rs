@@ -61,6 +61,7 @@ impl MipMaker {
     // largely copied from wgpu documentation
     pub fn make_mips(&self, gpu: &GPUContext, tex: &wgpu::Texture) {
         let mip_count = tex.mip_level_count();
+        if mip_count <= 1 { return; }
 
         let mip_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("blit"),
@@ -96,10 +97,14 @@ impl MipMaker {
             ..Default::default()
         });
 
+        let mut mip_size = tex.size();
+        mip_size.width /= 2;
+        mip_size.height /= 2;
+
         let temp_tex = gpu.device.create_texture(&TextureDescriptor {
             label: Some("temp_mip_tex"),
-            size: tex.size(),
-            mip_level_count: mip_count,
+            size: mip_size,
+            mip_level_count: mip_count - 1,
             dimension: TextureDimension::D2,
             sample_count: 1,
             format: tex.format(),
@@ -109,14 +114,9 @@ impl MipMaker {
 
         let mut encoder = gpu.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("mip_encoder") });
 
-        let mut mip_size = tex.size();
-
-        for i in 1..mip_count {
-            mip_size.width /= 2;
-            mip_size.height /= 2;
-
+        for i in 0..(mip_count-1) {
             let in_view = tex.create_view(&TextureViewDescriptor {
-                base_mip_level: i-1,
+                base_mip_level: i,
                 mip_level_count: Some(1),
                 ..Default::default()
             });
@@ -157,12 +157,16 @@ impl MipMaker {
             drop(rpass);
             encoder.copy_texture_to_texture(
                 ImageCopyTexture {texture: &temp_tex, mip_level: i, origin: Origin3d::ZERO, aspect: TextureAspect::All },
-                ImageCopyTexture {texture: &tex, mip_level: i, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+                ImageCopyTexture {texture: &tex, mip_level: i+1, origin: Origin3d::ZERO, aspect: TextureAspect::All },
                 mip_size,
             );
+
+            mip_size.width /= 2;
+            mip_size.height /= 2;
         }
     
         gpu.queue.submit([encoder.finish()]);
+        temp_tex.destroy();
     }
 
 
