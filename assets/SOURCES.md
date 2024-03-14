@@ -17,6 +17,12 @@ https://ambientcg.com/view?id=Grass002
 https://ambientcg.com/view?id=Ground071
 https://ambientcg.com/view?id=Rock050
 
+Pot textures are custom composite using additional AmbientCG materials as sources.
+https://ambientcg.com/view?id=Clay001
+https://ambientcg.com/view?id=Porcelain002
+https://ambientcg.com/view?id=Travertine012
+https://ambientcg.com/view?id=Concrete034
+
 SDF text generated using SDF Maker using renders of my own SVGs as input.
 https://jobtalle.com/SDFMaker/
 
