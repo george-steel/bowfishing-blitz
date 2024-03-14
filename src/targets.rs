@@ -272,13 +272,14 @@ impl TargetController {
         let tex_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             min_filter: wgpu::FilterMode::Linear,
             mag_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..wgpu::SamplerDescriptor::default()
         });
 
-        let pot_co_tex = gpu.load_png_texture::<u32>("./assets/pot-co.png", TextureFormat::Rgba8UnormSrgb).unwrap();
-        let pot_nr_tex = gpu.load_png_texture::<u32>("./assets/pot-nr.png", TextureFormat::Rgba8Unorm).unwrap();
+        let pot_co_tex = gpu.load_texture_make_mips::<u32>("./assets/pot-co.png", TextureFormat::Rgba8UnormSrgb, 4).unwrap();
+        let pot_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/pot-nr.png", TextureFormat::Rgba8Unorm, 4).unwrap();
 
         let targets_bg = gpu.device.create_bind_group(&BindGroupDescriptor {
             label: Some("pots_bg"),

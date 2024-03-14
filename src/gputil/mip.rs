@@ -58,6 +58,114 @@ impl MipMaker {
         INST.get_or_init(||{Self::new(gpu)})
     }
 
+    // largely copied from wgpu documentation
+    pub fn make_mips(&self, gpu: &GPUContext, tex: &wgpu::Texture) {
+        let mip_count = tex.mip_level_count();
+
+        let mip_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("blit"),
+            layout: None,
+            vertex: wgpu::VertexState {
+                module: &self.shaders,
+                entry_point: "mip_vert",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &self.shaders,
+                entry_point: "mip_frag",
+                targets: &[Some(tex.format().into())],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+        let bg_layout = mip_pipeline.get_bind_group_layout(0);
+
+        let sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("mip"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let temp_tex = gpu.device.create_texture(&TextureDescriptor {
+            label: Some("temp_mip_tex"),
+            size: tex.size(),
+            mip_level_count: mip_count,
+            dimension: TextureDimension::D2,
+            sample_count: 1,
+            format: tex.format(),
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+
+        let mut encoder = gpu.device.create_command_encoder(&CommandEncoderDescriptor { label: Some("mip_encoder") });
+
+        let mut mip_size = tex.size();
+
+        for i in 1..mip_count {
+            mip_size.width /= 2;
+            mip_size.height /= 2;
+
+            let in_view = tex.create_view(&TextureViewDescriptor {
+                base_mip_level: i-1,
+                mip_level_count: Some(1),
+                ..Default::default()
+            });
+            let out_view = temp_tex.create_view(&TextureViewDescriptor {
+                base_mip_level: i,
+                mip_level_count: Some(1),
+                ..Default::default()
+            });
+
+            let bg = gpu.device.create_bind_group(&BindGroupDescriptor {
+                label: None,
+                layout: &bg_layout,
+                entries: &[
+                    BindGroupEntry {binding: 0, resource: BindingResource::TextureView(&in_view)},
+                    BindGroupEntry {binding: 1, resource: BindingResource::Sampler(&sampler)},
+                ]
+            });
+
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &out_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            rpass.set_pipeline(&mip_pipeline);
+            rpass.set_bind_group(0, &bg, &[]);
+            rpass.draw(0..3, 0..1);
+
+            drop(rpass);
+            encoder.copy_texture_to_texture(
+                ImageCopyTexture {texture: &temp_tex, mip_level: i, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+                ImageCopyTexture {texture: &tex, mip_level: i, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+                mip_size,
+            );
+        }
+    
+        gpu.queue.submit([encoder.finish()]);
+    }
+
+
     pub fn bake_range_mips(&self, gpu: &GPUContext, input_texture: &Texture) -> BakedRangeMips {
         let tex_dims = input_texture.size();
         if tex_dims.width != tex_dims.height {

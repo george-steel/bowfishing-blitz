@@ -110,6 +110,33 @@ impl GPUContext {
         tex
     }
 
+    pub fn load_texture_make_mips<P: Pod + Zeroable>(&self, path: &str, format: wgpu::TextureFormat, num_mips: u32) -> ImageResult<wgpu::Texture> {
+        let img = load_png::<P>(path)?;
+        let texel_size = std::mem::size_of::<P>();
+        if texel_size != format.block_copy_size(None).unwrap() as usize {
+            panic!("texture format must have the same size as the data buffer element")
+        }
+
+        let size = wgpu::Extent3d{width: img.width as u32, height: img.height as u32, depth_or_array_layers: 1};
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor{
+            label: Some(path),
+            dimension: wgpu::TextureDimension::D2,
+            size, format,
+            mip_level_count: num_mips,
+            sample_count: 1,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::ImageCopyTexture{texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
+            bytemuck::cast_slice(&img.data),
+            wgpu::ImageDataLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(img.height as u32)},
+            size);
+        
+        mip::MipMaker::get(&self).make_mips(&self, &tex);
+        Ok(tex)
+    }
+
     pub fn upload_texture_atlas<Texel: bytemuck::Pod>(&self, label: &str, format: wgpu::TextureFormat, img: &PlanarImage<Texel>, num_tiles: u32) -> wgpu::Texture {
         let texel_size = std::mem::size_of::<Texel>();
         if texel_size != format.block_copy_size(None).unwrap() as usize {
