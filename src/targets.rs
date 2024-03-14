@@ -139,14 +139,15 @@ impl TargetController {
                     let rot_z: f32 = TAU * rand[2];
                     let norm = terrain.normal_at(xy).unwrap(); //same domain as height
                     let rot = Quat::from_rotation_arc(vec3(0.0, 0.0, 1.0), norm) * Quat::from_rotation_z(rot_z);
-                    let col_idx: f64 = rng.gen();
+                    let col_idx: f64 = rand[3] as f64;
                     let col_step = if rng.gen_bool(0.5) {0.33} else {-0.33};
+                    let col_fac = 0.4 * smoothstep((col_idx as f32 - 0.33).abs() * 5.0);
                     targets.push(Target {
                         bottom: vec3(xy.x, xy.y, z),
                         time_hit: -1.0,
                         orientation: rot,
                         color_a: pack_h3(colors.sample(col_idx)),
-                        color_b: pack_h3(colors.sample(col_idx + col_step)),
+                        color_b: pack_h3(colors.sample(col_idx + col_step).lerp(vec3(0.7, 0.7, 0.7), col_fac)),
                         seed: rng.gen(),
                     });
                 }

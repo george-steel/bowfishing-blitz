@@ -208,6 +208,11 @@ pub fn extent_2d(size: UVec2) -> wgpu::Extent3d {
     wgpu::Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1}
 }
 
+pub fn smoothstep(t: f32) -> f32 {
+    let ct = t.clamp(0.0, 1.0);
+    ct * ct * (3.0 - 2.0 * ct)
+}
+
 #[derive(Clone, Debug)]
 pub struct PlanarImage<P> {
     pub width: usize,
