@@ -16,7 +16,7 @@ image = {version = "0.24.8", default_features=false, features=["png", "hdr"]}
 log = "0.4.20"
 pollster = "0.3.0"
 wgpu = "0.19.3"
-winit = "=0.29.10"
+winit = {version = "=0.29.10", default_features = false, features = ["rwh_06", "x11"]}
 rgbe = "0.0.1"
 rand = "0.8.5"
 kira = "0.8.7"
