@@ -129,11 +129,14 @@ impl TargetController {
 
         let colors = color_rail();
 
+        let seed = rng.gen();
+        let mut i = 0;
         while targets.len() < num_targets {
-            let xy = (vec2(rng.gen(), rng.gen()) - 0.5) * 2.0 * inner_radius;
+            let rand = sobol_burley::sample_4d(i, 0, seed);
+            let xy = (vec2(rand[0], rand[1]) - 0.5) * 2.0 * inner_radius;
             if let Some(z) = terrain.height_at(xy) {
                 if z < -0.1 {
-                    let rot_z: f32 = TAU * rng.gen::<f32>();
+                    let rot_z: f32 = TAU * rand[2];
                     let norm = terrain.normal_at(xy).unwrap(); //same domain as height
                     let rot = Quat::from_rotation_arc(vec3(0.0, 0.0, 1.0), norm) * Quat::from_rotation_z(rot_z);
                     let col_idx: f64 = rng.gen();
@@ -148,6 +151,7 @@ impl TargetController {
                     });
                 }
             }
+            i += 1
         }
         targets.into_boxed_slice()
     }

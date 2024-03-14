@@ -288,6 +288,7 @@ dependencies = [
  "pollster",
  "rand",
  "rgbe",
+ "sobol_burley",
  "wgpu",
  "winit",
 ]
@@ -1731,6 +1732,12 @@ checksum = "e6845563ada680337a52d43bb0b29f396f2d911616f6573012645b9e3d048a49"
 dependencies = [
  "serde",
 ]
+
+[[package]]
+name = "sobol_burley"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09f37cae1d97c4078377153ede7a26f7813b689ad5c6b76ff45dc52e53afe1d1"
 
 [[package]]
 name = "spirv"

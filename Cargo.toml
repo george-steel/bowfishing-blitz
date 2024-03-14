@@ -20,6 +20,7 @@ winit = "=0.29.10"
 rgbe = "0.0.1"
 rand = "0.8.5"
 kira = "0.8.7"
+sobol_burley = "0.5.0"
 
 [profile.dev.package."*"]
 opt-level = 3
