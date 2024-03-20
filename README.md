@@ -1,3 +1,5 @@
+![screenshot](./doc/bb-title-screen.jpg)
+
 Bowfishing Blitz: A Game of Refractive Aberration
 =================================================
 
