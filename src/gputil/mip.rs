@@ -68,12 +68,14 @@ impl MipMaker {
             layout: None,
             vertex: wgpu::VertexState {
                 module: &self.shaders,
-                entry_point: "mip_vert",
+                entry_point: Some("mip_vert"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &self.shaders,
-                entry_point: "mip_frag",
+                entry_point: Some("mip_frag"),
+                compilation_options: Default::default(),
                 targets: &[Some(tex.format().into())],
             }),
             primitive: wgpu::PrimitiveState {
@@ -83,6 +85,7 @@ impl MipMaker {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None
         });
         let bg_layout = mip_pipeline.get_bind_group_layout(0);
 
@@ -208,12 +211,14 @@ impl MipMaker {
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &self.shaders,
-                entry_point: "bake_mip_fullscreen_tri",
+                entry_point: Some("bake_mip_fullscreen_tri"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(FragmentState {
                 module: &self.shaders,
-                entry_point: "bake_first_range_mip",
+                entry_point: Some("bake_first_range_mip"),
+                compilation_options: Default::default(),
                 targets: &[Some(TextureFormat::Rg16Float.into())],
             }),
             primitive: PrimitiveState {
@@ -223,6 +228,7 @@ impl MipMaker {
             depth_stencil: None,
             multisample: MultisampleState::default(),
             multiview: None,
+            cache: None
         });
 
         let next_mip_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -230,12 +236,14 @@ impl MipMaker {
             layout: Some(&pipeline_layout),
             vertex: VertexState {
                 module: &self.shaders,
-                entry_point: "bake_mip_fullscreen_tri",
+                entry_point: Some("bake_mip_fullscreen_tri"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(FragmentState {
                 module: &self.shaders,
-                entry_point: "bake_next_range_mip",
+                entry_point: Some("bake_next_range_mip"),
+                compilation_options: Default::default(),
                 targets: &[Some(TextureFormat::Rg16Float.into())],
             }),
             primitive: PrimitiveState {
@@ -245,6 +253,7 @@ impl MipMaker {
             depth_stencil: None,
             multisample: MultisampleState::default(),
             multiview: None,
+            cache: None
         });
 
         let texture_size = tex_dims.width;

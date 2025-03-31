@@ -117,14 +117,14 @@ impl DeferredRendererTextures {
         let water_size_3d = extent_2d(water_size);
 
         let (dist, dist_view) = gpu.create_empty_texture(size_3d, TextureFormat::Depth32Float, "dist");
-        let (albedo, albedo_view) = gpu.create_empty_texture(size_3d, TextureFormat::Rg11b10Float, "albedo");
+        let (albedo, albedo_view) = gpu.create_empty_texture(size_3d, TextureFormat::Rg11b10Ufloat, "albedo");
         let (normal, normal_view) = gpu.create_empty_texture(size_3d, TextureFormat::Rgb10a2Unorm, "normal");
         let (rough_metal, rm_view) = gpu.create_empty_texture(size_3d, TextureFormat::Rg8Unorm, "rough-metal");
         let (ao, ao_view) = gpu.create_empty_texture(size_3d, TextureFormat::R8Unorm, "ao");
         let (material, material_view) = gpu.create_empty_texture(size_3d, TextureFormat::R8Uint, "material");
-        let (water, water_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Float, "water-out");
+        let (water, water_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Ufloat, "water-out");
         let (water_dist, water_dist_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Depth32Float, "water-dist");
-        let (water_albedo, water_albedo_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Float, "water-albedo");
+        let (water_albedo, water_albedo_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Ufloat, "water-albedo");
         let (water_normal, water_normal_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rgb10a2Unorm, "water-normal");
         let (water_rough_metal, water_rm_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg8Unorm, "water-rough-metal");
         let (water_ao, water_ao_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Unorm, "water-ao");
@@ -405,12 +405,14 @@ impl DeferredRenderer {
             layout: Some(&lighting_pipeline_layout),
             vertex: VertexState {
                 module: &lighting_shaders,
-                entry_point: "fullscreen_tri",
+                entry_point: Some("fullscreen_tri"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(FragmentState {
                 module: &lighting_shaders,
-                entry_point: "do_global_lighting",
+                entry_point: Some("do_global_lighting"),
+                compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState{ format: gpu.output_format, blend: None, write_mask: ColorWrites::ALL })],
             }),
             primitive: PrimitiveState {
@@ -420,6 +422,7 @@ impl DeferredRenderer {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None
         });
 
         let underwater_lighting_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -437,13 +440,15 @@ impl DeferredRenderer {
             layout: Some(&underwater_lighting_pipeline_layout),
             vertex: VertexState {
                 module: &lighting_shaders,
-                entry_point: "fullscreen_tri",
+                entry_point: Some("fullscreen_tri"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(FragmentState {
                 module: &lighting_shaders,
-                entry_point: "do_underwater_lighting",
-                targets: &[Some(ColorTargetState{ format: TextureFormat::Rg11b10Float, blend: None, write_mask: ColorWrites::ALL })],
+                entry_point: Some("do_underwater_lighting"),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState{ format: TextureFormat::Rg11b10Ufloat, blend: None, write_mask: ColorWrites::ALL })],
             }),
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleList,
@@ -452,6 +457,7 @@ impl DeferredRenderer {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
 
@@ -655,7 +661,7 @@ impl DeferredRenderer {
     }
 
     pub const GBUFFER_TARGETS: &'static [Option<ColorTargetState>] = &[
-        Some(ColorTargetState{ format: TextureFormat::Rg11b10Float, blend: None, write_mask: ColorWrites::ALL }),
+        Some(ColorTargetState{ format: TextureFormat::Rg11b10Ufloat, blend: None, write_mask: ColorWrites::ALL }),
         Some(ColorTargetState{ format: TextureFormat::Rgb10a2Unorm, blend: None, write_mask: ColorWrites::ALL }),
         Some(ColorTargetState{ format: TextureFormat::Rg8Unorm, blend: None, write_mask: ColorWrites::ALL }),
         Some(ColorTargetState{ format: TextureFormat::R8Unorm, blend: None, write_mask: ColorWrites::ALL }),
@@ -663,7 +669,7 @@ impl DeferredRenderer {
     ];
 
     pub const UNDERWATER_GBUFFER_TARGETS: &'static [Option<ColorTargetState>] = &[
-        Some(ColorTargetState{ format: TextureFormat::Rg11b10Float, blend: None, write_mask: ColorWrites::ALL }),
+        Some(ColorTargetState{ format: TextureFormat::Rg11b10Ufloat, blend: None, write_mask: ColorWrites::ALL }),
         Some(ColorTargetState{ format: TextureFormat::Rgb10a2Unorm, blend: None, write_mask: ColorWrites::ALL }),
         Some(ColorTargetState{ format: TextureFormat::Rg8Unorm, blend: None, write_mask: ColorWrites::ALL }),
         Some(ColorTargetState{ format: TextureFormat::R8Unorm, blend: None, write_mask: ColorWrites::ALL }),

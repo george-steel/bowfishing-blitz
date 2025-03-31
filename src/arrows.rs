@@ -187,12 +187,14 @@ impl ArrowController {
             layout: Some(&arrows_pipeline_layout),
             vertex: VertexState {
                 module: &shaders,
-                entry_point: "arrow_vert_above",
+                entry_point: Some("arrow_vert_above"),
+                compilation_options: Default::default(),
                 buffers: &[arrows_vertex_layout.clone()],
             },
             fragment: Some(FragmentState {
                 module: &shaders,
-                entry_point: "arrow_frag_above",
+                entry_point: Some("arrow_frag_above"),
+                compilation_options: Default::default(),
                 targets: DeferredRenderer::GBUFFER_TARGETS,
             }),
             primitive: PrimitiveState {
@@ -203,6 +205,7 @@ impl ArrowController {
             depth_stencil: reverse_z(),
             multisample: MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         let arrows_below_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -210,12 +213,14 @@ impl ArrowController {
             layout: Some(&arrows_pipeline_layout),
             vertex: VertexState {
                 module: &shaders,
-                entry_point: "arrow_vert_below",
+                entry_point: Some("arrow_vert_below"),
+                compilation_options: Default::default(),
                 buffers: &[arrows_vertex_layout],
             },
             fragment: Some(FragmentState {
                 module: &shaders,
-                entry_point: "arrow_frag_below",
+                entry_point: Some("arrow_frag_below"),
+                compilation_options: Default::default(),
                 targets: DeferredRenderer::UNDERWATER_GBUFFER_TARGETS,
             }),
             primitive: PrimitiveState {
@@ -226,6 +231,7 @@ impl ArrowController {
             depth_stencil: reverse_z(),
             multisample: MultisampleState::default(),
             multiview: None,
+            cache: None
         });
 
         let arrows_buf = gpu.device.create_buffer(&BufferDescriptor {
@@ -258,14 +264,16 @@ impl ArrowController {
             layout: Some(&splish_pipeline_layout),
             vertex: VertexState {
                 module: &shaders,
-                entry_point: "splish_vert",
+                entry_point: Some("splish_vert"),
+                compilation_options: Default::default(),
                 buffers: from_ref(&splish_vertex_layout),
             },
             fragment: Some(FragmentState {
                 module: &shaders,
-                entry_point: "splish_frag",
+                entry_point: Some("splish_frag"),
+                compilation_options: Default::default(),
                 targets: &[
-                    Some(ColorTargetState{ format: TextureFormat::Rg11b10Float, blend: None, write_mask: ColorWrites::empty() }),
+                    Some(ColorTargetState{ format: TextureFormat::Rg11b10Ufloat, blend: None, write_mask: ColorWrites::empty() }),
                     Some(ColorTargetState{
                         format: TextureFormat::Rgb10a2Unorm,
                         blend: Some(BlendState {
@@ -296,6 +304,7 @@ impl ArrowController {
             }),
             multisample: MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         let splish_buf = gpu.device.create_buffer(&BufferDescriptor {

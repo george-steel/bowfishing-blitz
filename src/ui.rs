@@ -1,4 +1,4 @@
-use std::{default, io::Cursor, mem::size_of, sync::Arc, time::{Duration, Instant}};
+use std::{default, io::Cursor, mem::size_of, sync::Arc, time::{Duration, Instant}, default::Default};
 use image::imageops::FilterType::Nearest;
 use kira::{manager::AudioManager, sound::{static_sound::{StaticSoundData, StaticSoundSettings}, streaming::{StreamingSoundData, StreamingSoundHandle, StreamingSoundSettings}, FromFileError}, tween::{Easing, Tween}, Volume};
 use wgpu::{util::{BufferInitDescriptor, DeviceExt}, *};
@@ -155,7 +155,8 @@ impl UIDisplay {
             layout: Some(&text_pipeline_layout),
             vertex: VertexState {
                 module: &shaders,
-                entry_point: "sdf_text_vert",
+                entry_point: Some("sdf_text_vert"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             primitive: PrimitiveState {
@@ -164,7 +165,8 @@ impl UIDisplay {
             },
             fragment: Some(FragmentState {
                 module: &shaders,
-                entry_point: "sdf_text_frag",
+                entry_point: Some("sdf_text_frag"),
+                compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState{
                     format: gpu.output_format,
                     blend: Some(BlendState {
@@ -176,6 +178,7 @@ impl UIDisplay {
             depth_stencil: None,
             multisample: Default::default(),
             multiview: None,
+            cache: None,
         });
 
         let blackout_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -183,7 +186,8 @@ impl UIDisplay {
             layout: None,
             vertex: VertexState {
                 module: &shaders,
-                entry_point: "blackout_vert",
+                entry_point: Some("blackout_vert"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             primitive: PrimitiveState {
@@ -192,7 +196,8 @@ impl UIDisplay {
             },
             fragment: Some(FragmentState {
                 module: &shaders,
-                entry_point: "blackout_frag",
+                entry_point: Some("blackout_frag"),
+                compilation_options: Default::default(),
                 targets: &[Some(ColorTargetState{
                     format: gpu.output_format,
                     blend: Some(BlendState {
@@ -204,6 +209,7 @@ impl UIDisplay {
             depth_stencil: None,
             multisample: Default::default(),
             multiview: None,
+            cache: None,
         });
 
         let title_params = SDFTextParams {

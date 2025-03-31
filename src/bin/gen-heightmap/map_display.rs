@@ -18,12 +18,14 @@ impl FragDisplay {
             layout: None,
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "fullscreen_quad",
+                entry_point: Some("fullscreen_quad"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "terrain_map",
+                entry_point: Some("terrain_map"),
+                compilation_options: Default::default(),
                 targets: &[Some(ctx.output_format.into())],
             }),
             primitive: wgpu::PrimitiveState {
@@ -33,6 +35,7 @@ impl FragDisplay {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None
         });
 
         FragDisplay {
@@ -73,12 +76,14 @@ impl FragDisplay {
             layout: None,
             vertex: wgpu::VertexState {
                 module: &self.shader,
-                entry_point: "fullscreen_quad",
+                entry_point: Some("fullscreen_quad"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &self.shader,
-                entry_point: "terrain_heightmap",
+                entry_point: Some("terrain_heightmap"),
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::TextureFormat::R16Float.into())],
             }),
             primitive: wgpu::PrimitiveState {
@@ -88,6 +93,7 @@ impl FragDisplay {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None
         });
 
         let size_3d = wgpu::Extent3d {

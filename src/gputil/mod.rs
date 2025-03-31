@@ -31,6 +31,7 @@ impl GPUContext {
             label: None,
             required_features: features,
             required_limits: wgpu::Limits::default(),
+            memory_hints: wgpu::MemoryHints::Performance,
         }, None)
         .await
         .expect("Failed to create device");

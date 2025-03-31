@@ -122,12 +122,14 @@ impl TerrainView {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "terrain_mesh",
+                entry_point: Some("terrain_mesh"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "terrain_frag",
+                entry_point: Some("terrain_frag"),
+                compilation_options: Default::default(),
                 targets: DeferredRenderer::GBUFFER_TARGETS,
             }),
             primitive: wgpu::PrimitiveState {
@@ -138,6 +140,7 @@ impl TerrainView {
             depth_stencil: reverse_z(),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None
         });
 
         let underwater_terrain_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -145,12 +148,14 @@ impl TerrainView {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "underwater_terrain_mesh",
+                entry_point: Some("underwater_terrain_mesh"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "underwater_terrain_frag",
+                entry_point: Some("underwater_terrain_frag"),
+                compilation_options: Default::default(),
                 targets: DeferredRenderer::UNDERWATER_GBUFFER_TARGETS,
             }),
             primitive: wgpu::PrimitiveState {
@@ -161,6 +166,7 @@ impl TerrainView {
             depth_stencil: reverse_z(),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None
         });
 
         let water_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -168,12 +174,14 @@ impl TerrainView {
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "water_quad",
+                entry_point: Some("water_quad"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "water_frag",
+                entry_point: Some("water_frag"),
+                compilation_options: Default::default(),
                 targets: DeferredRenderer::GBUFFER_TARGETS,
             }),
             primitive: wgpu::PrimitiveState {
@@ -184,6 +192,7 @@ impl TerrainView {
             depth_stencil: reverse_z(),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         let height_tex = gpu.upload_2d_texture("terrain_heightmap", TextureFormat::R16Float, &terrain.heightmap);

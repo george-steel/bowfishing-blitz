@@ -65,7 +65,7 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         let corr_xy = length(look_dir.xy) / length(refr_up.xy);
         let corr_z = look_dir.z / refr_up.z;
         let trans_dir = normalize(vec3f(refr_norm.xy * corr_xy, refr_norm.z * corr_z)); // in planar-refracted space
-        let uw_dist_val = textureSampleLevel(water_dist_buf, water_sampler, uv, 0.0);
+        let uw_dist_val = textureSampleLevel(water_dist_buf, water_sampler, uv, 0);
         let uw_dist = length(world_pos - camera.eye) * (dist_val / uw_dist_val - 1.0);
         let refr_point = world_pos + uw_dist * trans_dir; // CSPR on
         //let refr_point = world_pos + uw_dist * normalize(look_dir + 0.75 * (refr_norm - refr_up)); // CSPR off

@@ -222,12 +222,14 @@ impl TargetController {
             layout: Some(&targets_pipeline_layout),
             vertex: VertexState {
                 module: &shaders,
-                entry_point: "pot_vert_above",
+                entry_point: Some("pot_vert_above"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(FragmentState {
                 module: &shaders,
-                entry_point: "pot_frag_above",
+                entry_point: Some("pot_frag_above"),
+                compilation_options: Default::default(),
                 targets: DeferredRenderer::GBUFFER_TARGETS,
             }),
             primitive: PrimitiveState {
@@ -238,6 +240,7 @@ impl TargetController {
             depth_stencil: reverse_z(),
             multisample: MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         let targets_below_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -245,12 +248,14 @@ impl TargetController {
             layout: Some(&targets_pipeline_layout),
             vertex: VertexState {
                 module: &shaders,
-                entry_point: "pot_vert_below",
+                entry_point: Some("pot_vert_below"),
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(FragmentState {
                 module: &shaders,
-                entry_point: "pot_frag_below",
+                entry_point: Some("pot_frag_below"),
+                compilation_options: Default::default(),
                 targets: DeferredRenderer::UNDERWATER_GBUFFER_TARGETS,
             }),
             primitive: PrimitiveState {
@@ -261,6 +266,7 @@ impl TargetController {
             depth_stencil: reverse_z(),
             multisample: MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         let targets_buf = gpu.device.create_buffer(&BufferDescriptor {
