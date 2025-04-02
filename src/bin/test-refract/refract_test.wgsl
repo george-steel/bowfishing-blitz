@@ -1,21 +1,23 @@
 // planar refraction of underwater geometry.
 // alters the depth of vertices to their virtual images.
 fn apparent_depth(dist: f32, eye_height: f32, depth: f32) -> f32 {
-    // Finding apparent depth off-axis requires finding the fixed point of a nasty quartic.
-    // To approximate start with a crude estimate (a fitted manually in Desmos)
-    // then refine by ineration of the actual equation 
-    let x = dist / (depth + 3 * eye_height);
-    let init_ratio = 1.33 * (x * x + 1);
+    let d = abs(depth);
+    let h = eye_height;
+    let x = dist;
 
-    var ratio: f32 = init_ratio; 
-    var oblique = dist / (abs(depth) / ratio  + eye_height);
-    ratio = sqrt(0.77 * oblique * oblique + 1.77);
-    oblique = dist / (abs(depth) / ratio + eye_height);
-    ratio = sqrt(0.77 * oblique * oblique + 1.77);
-    oblique = dist / (abs(depth) / ratio + eye_height);
-    ratio = sqrt(0.77 * oblique * oblique + 1.77);
-    oblique = dist / (abs(depth) / ratio + eye_height);
-    ratio = sqrt(0.77 * oblique * oblique + 1.77);
+    // starting point in correct bucket
+    let oi = dist / (depth * 0.01 + eye_height);
+    var ratio: f32 = sqrt(0.777 * oi * oi + 1.777);
+    // use newton's method to find apparant depth ratio
+    for (var i = 0; i < 4; i++) {
+        let q = ratio;
+        let od = d + q * h;
+        let o = q * x / od;
+        let Do = x * d / od / od;
+        let r = sqrt(0.777 * o * o + 1.777);
+        let Dr = 0.777 * o * Do / r;
+        ratio = q - (r - q) / (Dr - 1);
+    }
     return depth / ratio;
 }
 
@@ -44,14 +46,14 @@ struct FQOut {
 }
 
 @fragment fn refr_test(vert: FQOut) -> @location(0) vec4f {
-    let dist = vert.xy.x * 100;
-    let depth = vert.xy.y * 100;
+    let dist = vert.xy.x * 500;
+    let depth = vert.xy.y * 500;
     let err = refracted_error(dist, depth);
     if err >= 1.0 {
-        let e = 1.0 * (err - 1.0);
+        let e = 5.0 * (err - 1.0);
         return vec4f(0.0, e, 0.0, 1.0);
     } else {
-        let e = 1.0 * (1.0 - err);
+        let e = 5.0 * (1.0 - err);
         return vec4f(e, 0.0, 0.0, 1.0);
     }
 }
