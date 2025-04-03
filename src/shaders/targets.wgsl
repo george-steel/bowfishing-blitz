@@ -21,14 +21,13 @@ struct LathePoint {
 struct PotVSOut {
     @builtin(position) clip_pos: vec4f,
     @location(0) world_pos: vec3f,
-    @location(1) refr_z: f32,
-    @location(2) uv: vec2f,
-    @location(3) world_norm: vec3f,
-    @location(4) world_tan: vec3f,
-    @location(5) world_bitan: vec3f,
-    @location(6) color_a: vec3f,
-    @location(7) color_b: vec3f,
-    @location(8) explode_progress: f32,
+    @location(1) uv: vec2f,
+    @location(2) world_norm: vec3f,
+    @location(3) world_tan: vec3f,
+    @location(4) world_bitan: vec3f,
+    @location(5) color_a: vec3f,
+    @location(6) color_b: vec3f,
+    @location(7) explode_progress: f32,
 }
 
 const POT_U_DIVS: u32 = 8;
@@ -38,7 +37,7 @@ const SINK_TIME: f32 = 1.0;
 var<private> QUAD_U: array<f32, 6> = array(0, 0.5, 1, 1, 0.5, 1.5);
 var<private> QUAD_V: array<u32, 6> = array(0, 1, 0, 0, 1, 1);
 
-fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
+@vertex fn pot_vert(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> PotVSOut {
     let ring_idx = vert_idx / (6 * POT_U_DIVS);
     let quad_idx = (vert_idx / 6) % (POT_U_DIVS);
     let quad_corner = vert_idx % 6;
@@ -93,14 +92,9 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     let color_ab = unpack2x16float(pot.colors_packed.y);
     let color_b = unpack2x16float(pot.colors_packed.z);
     
-    var refr_z = world_pos.z;
-    if underwater {
-        refr_z = refracted_z(world_pos);
-    }
     var out: PotVSOut;
-    out.clip_pos = camera.matrix * vec4f(world_pos.xy, refr_z, 1.0);
+    out.clip_pos = clip_point(world_pos);
     out.world_pos = world_pos;
-    out.refr_z = refr_z;
     out.uv = vec2f(u, point.v);
     out.world_norm = world_norm;
     out.world_tan = world_tan;
@@ -111,22 +105,13 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     return out;
 }
 
-@vertex fn pot_vert_above(@builtin(vertex_index) vert: u32, @builtin(instance_index) inst: u32) -> PotVSOut {
-    return pot_vert(vert, inst, false);
-}
-
-@vertex fn pot_vert_below(@builtin(vertex_index) vert: u32, @builtin(instance_index) inst: u32) -> PotVSOut {
-    return pot_vert(vert, inst, true);
-}
-
 @group(1) @binding(2) var tex_sampler: sampler;
 @group(1) @binding(3) var pot_co_tex: texture_2d<f32>;
 @group(1) @binding(4) var pot_nr_tex: texture_2d<f32>;
 
-@fragment fn pot_frag_above(v: PotVSOut, @builtin(front_facing) is_forward: bool) -> GBufferPoint {
-    if camera.eye.z > 0 && v.world_pos.z < 0 {
-        discard;
-    }
+@fragment fn pot_frag(v: PotVSOut, @builtin(front_facing) is_forward: bool) -> GBufferPoint {
+    guard_frag(v.world_pos);
+
     let back_corr = select(-1.0, 1.0, is_forward);
     let norm = normalize(v.world_norm) * back_corr;
     let tan = normalize(v.world_tan);
@@ -152,38 +137,5 @@ fn pot_vert(vert_idx: u32, inst_idx: u32, underwater: bool) -> PotVSOut {
     out.rough_metal = vec2f(nr.w, 0.0);
     out.occlusion = co.w;
     out.mat_type = MAT_SOLID;
-    return out;
-}
-
-@fragment fn pot_frag_below(v: PotVSOut, @builtin(front_facing) is_forward: bool) -> UnderwaterPoint {
-    if v.world_pos.z > 0 {
-        discard;
-    }
-    let back_corr = select(-1.0, 1.0, is_forward);
-    let norm = normalize(v.world_norm) * back_corr;
-    let tan = normalize(v.world_tan);
-    let bitan = normalize(v.world_bitan) * back_corr;
-    let norm_mat = mat3x3f(tan, bitan, norm);
-
-    let col_mat = mat3x3f(v.color_a, v.color_b, vec3f(1.0));
-
-    let uv = vec2f(3 * v.uv.x, 0.5 * select(2 - v.uv.y, v.uv.y, is_forward));
-
-    let co = textureSample(pot_co_tex, tex_sampler, uv);
-    let nr = textureSample(pot_nr_tex, tex_sampler, uv);
-    var albedo = col_mat * co.xyz;
-    let frag_norm = norm_mat * normalize(2 * nr.xyz - 1);
-
-    if !is_forward {
-        albedo *= mix(1.0, mix(0.2, 1.0, v.explode_progress), smoothstep(0.25, 0.35, v.uv.x));
-    }
-
-    var out: UnderwaterPoint;
-    out.albedo = vec4f(albedo, 1.0);
-    out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
-    out.rough_metal = vec2f(nr.w, 0.0);
-    out.occlusion = co.w;
-    out.mat_type = MAT_SOLID;
-    out.depth_adj = v.world_pos.z / v.refr_z;
     return out;
 }

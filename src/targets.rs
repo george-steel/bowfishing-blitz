@@ -217,18 +217,18 @@ impl TargetController {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let targets_above_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
+        let targets_pipeline_desc = RenderPipelineDescriptor {
             label: Some("pots_above"),
             layout: Some(&targets_pipeline_layout),
             vertex: VertexState {
                 module: &shaders,
-                entry_point: Some("pot_vert_above"),
+                entry_point: Some("pot_vert"),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(FragmentState {
                 module: &shaders,
-                entry_point: Some("pot_frag_above"),
+                entry_point: Some("pot_frag"),
                 compilation_options: Default::default(),
                 targets: DeferredRenderer::GBUFFER_TARGETS,
             }),
@@ -241,33 +241,9 @@ impl TargetController {
             multisample: MultisampleState::default(),
             multiview: None,
             cache: None,
-        });
-
-        let targets_below_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("pots_above"),
-            layout: Some(&targets_pipeline_layout),
-            vertex: VertexState {
-                module: &shaders,
-                entry_point: Some("pot_vert_below"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(FragmentState {
-                module: &shaders,
-                entry_point: Some("pot_frag_below"),
-                compilation_options: Default::default(),
-                targets: DeferredRenderer::UNDERWATER_GBUFFER_TARGETS,
-            }),
-            primitive: PrimitiveState {
-                topology: PrimitiveTopology::TriangleList,
-                cull_mode: None,
-                ..PrimitiveState::default()
-            },
-            depth_stencil: reverse_z(),
-            multisample: MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        };
+        let targets_above_pipeline = gpu.device.create_render_pipeline(&targets_pipeline_desc);
+        let targets_below_pipeline = DeferredRenderer::create_refracted_pipeline(&gpu.device, &targets_pipeline_desc);
 
         let targets_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("pots_buf"),

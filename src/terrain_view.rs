@@ -117,7 +117,7 @@ impl TerrainView {
             label: Some("terrain.wgsl"),
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::TERRAIN)),
         });
-        let terrain_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let terrain_pipeline_desc = wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -141,33 +141,9 @@ impl TerrainView {
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None
-        });
-
-        let underwater_terrain_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("underwater_terrain_mesh"),
-                compilation_options: Default::default(),
-                buffers: &[],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("underwater_terrain_frag"),
-                compilation_options: Default::default(),
-                targets: DeferredRenderer::UNDERWATER_GBUFFER_TARGETS,
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                cull_mode: Some(wgpu::Face::Back),
-                ..wgpu::PrimitiveState::default()
-            },
-            depth_stencil: reverse_z(),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None
-        });
+        };
+        let terrain_pipeline = gpu.device.create_render_pipeline(&terrain_pipeline_desc);
+        let underwater_terrain_pipeline = DeferredRenderer::create_refracted_pipeline(&gpu.device, &terrain_pipeline_desc);
 
         let water_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,

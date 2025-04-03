@@ -95,27 +95,25 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     return vec4f(color, 1.0);
 }
 
-@group(1) @binding(6) var depth_adj_buf: texture_2d<f32>;
-
 @fragment fn do_underwater_lighting(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let px = vec2i(floor(pos.xy));
     let material = textureLoad(material_buf, px, 0).x;
     if material == MAT_SKY {
         return vec4f(0.5, 0.5, 0.75, 1.0);
     }
-    if material == MAT_SKY {
-        return vec4f(0.5, 0.5, 0.5, 1.0);
-    }
 
     let clip_xy = ((pos.xy / camera.water_fb_size) - 0.5)  * vec2f(2, -2);
     let dist_val = textureLoad(dist_buf, px, 0);
     let clip_w = camera.clip_near / dist_val;
     let clip_pos = vec4f(clip_xy * clip_w, camera.clip_near, clip_w);
-    var world_pos = (camera.inv_matrix * clip_pos).xyz;
-    let depth_adj = textureLoad(depth_adj_buf, px, 0).x;
-    let look_dir_above = normalize(world_pos - camera.eye);
-    world_pos.z *= depth_adj;
-    let look_dir_below = normalize(world_pos - camera.eye);
+    let virt_pos = (camera.inv_matrix * clip_pos).xyz;
+
+    // recover world position using snell's law
+    let look_dir_above = normalize(virt_pos - camera.eye);
+    let look_dir_below = normalize(refract(look_dir_above, vec3f(0.0, 0.0, 1.0), 0.75));
+    let dist_below = virt_pos.z / (virt_pos.z - camera.eye.z);
+    let depth_adj = (look_dir_below.z / look_dir_above.z) * (length(look_dir_above.xy) / length(look_dir_below.xy));
+    let world_pos = vec3f(virt_pos.xy, depth_adj * virt_pos.z);
 
     let amb_falloff = exp(world_pos.z / sun.half_secci);
     let sun_falloff = exp(world_pos.z / (sun.refr_sun_dir.z * sun.half_secci));

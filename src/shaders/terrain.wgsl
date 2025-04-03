@@ -15,7 +15,6 @@ struct TerrainParams {
     grid_size: u32,
 }
 
-
 struct TerrainVertexOut {
     @builtin(position) clip_pos: vec4f,
     @location(0) world_pos: vec3f,
@@ -27,39 +26,16 @@ struct TerrainVertexOut {
 @group(1) @binding(1) var terrain_height: texture_2d<f32>;
 @group(1) @binding(2) var terrain_height_sampler: sampler;
 
-
-
 @vertex fn terrain_mesh(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> TerrainVertexOut {
     let ij = vec2i(vec2u(inst_idx + (vert_idx % 2), vert_idx / 2));
     let uv = vec2f(0.0, 1.0) + vec2f(1.0, -1.0) * vec2f(ij) / f32(tparams.grid_size);
     let xy = tparams.radius * (2 * vec2f(ij) / f32(tparams.grid_size) - 1);
     let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_height_sampler, uv, 0.0).x;
-    let world_pos = vec4f(xy, z, 1);
+    let world_pos = vec3f(xy, z);
 
     var out: TerrainVertexOut;
-    out.clip_pos = camera.matrix * world_pos;
+    out.clip_pos = clip_point(world_pos);
     out.refract_pos = world_pos.xyz;
-    out.world_pos = world_pos.xyz;
-    out.uv = uv;
-    return out;
-}
-
-@vertex fn underwater_terrain_mesh(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> TerrainVertexOut {
-    let ij = vec2i(vec2u(inst_idx + (vert_idx % 2), vert_idx / 2));
-    let uv = vec2f(0.0, 1.0) + vec2f(1.0, -1.0) * vec2f(ij) / f32(tparams.grid_size);
-    let xy = tparams.radius * (2 * vec2f(ij) / f32(tparams.grid_size) - 1);
-    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_height_sampler, uv, 0.0).x;
-    let world_pos = vec4f(xy, z, 1);
-
-
-    // Clip-space planar refraction: move vertices to their virtual images when converting to clip space.
-    var refract_pos = world_pos;
-    let cam_dist = length(world_pos.xy - camera.eye.xy);
-    refract_pos.z = apparent_depth(cam_dist, camera.eye.z, world_pos.z);
-
-    var out: TerrainVertexOut;
-    out.clip_pos = camera.matrix * refract_pos;
-    out.refract_pos = refract_pos.xyz;
     out.world_pos = world_pos.xyz;
     out.uv = uv;
     return out;
@@ -126,9 +102,8 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
 }
 
 @fragment fn terrain_frag(v: TerrainVertexOut) -> GBufferPoint {
-    if camera.eye.z > 0 && v.world_pos.z <  -0.1 {
-        discard; // skip texturing below water
-    }
+    guard_frag(v.world_pos);
+
     let grad = terrain_grad(v.uv);
     let norm = normalize(vec3f(-grad, 1));
     let tan_x = normalize(vec3f(1, 0, grad.x));
@@ -149,34 +124,6 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     out.occlusion = params.co.w;
     out.rough_metal = vec2f(params.nr.w, 0.0);
     out.mat_type = MAT_SOLID;
-    return out;
-}
-
-@fragment fn underwater_terrain_frag(v: TerrainVertexOut) -> UnderwaterPoint {
-    if v.world_pos.z > 0.1 {
-        discard; // skip texturing above water
-    }
-
-    let grad = terrain_grad(v.uv);
-    let norm = normalize(vec3f(-grad, 1));
-    let tan_x = normalize(vec3f(1, 0, grad.x));
-    let tan_y = normalize(vec3f(0, 1, grad.y));
-    let norm_mat = mat3x3f(tan_x, tan_y, norm);
-
-    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_height_sampler, v.uv, 0.0).x;
-
-    let params = terrain_tex(v.world_pos.xy, z, norm);
-
-    let albedo = params.co.xyz;
-    let frag_norm = norm_mat * (2 * params.nr.xyz - 1);
-
-    var out: UnderwaterPoint;
-    out.albedo = vec4f(albedo, 1.0);
-    out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
-    out.occlusion = params.co.w;
-    out.rough_metal = vec2f(params.nr.w, 0.0);
-    out.mat_type = MAT_SOLID;
-    out.depth_adj = v.world_pos.z / v.refract_pos.z;
     return out;
 }
 

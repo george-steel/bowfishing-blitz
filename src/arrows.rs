@@ -182,18 +182,18 @@ impl ArrowController {
             push_constant_ranges: &[],
         });
 
-        let arrows_above_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("arrows_above"),
+        let arrows_above_pipeline_desc = RenderPipelineDescriptor {
+            label: Some("arrows"),
             layout: Some(&arrows_pipeline_layout),
             vertex: VertexState {
                 module: &shaders,
-                entry_point: Some("arrow_vert_above"),
+                entry_point: Some("arrow_vert"),
                 compilation_options: Default::default(),
                 buffers: &[arrows_vertex_layout.clone()],
             },
             fragment: Some(FragmentState {
                 module: &shaders,
-                entry_point: Some("arrow_frag_above"),
+                entry_point: Some("arrow_frag"),
                 compilation_options: Default::default(),
                 targets: DeferredRenderer::GBUFFER_TARGETS,
             }),
@@ -206,33 +206,11 @@ impl ArrowController {
             multisample: MultisampleState::default(),
             multiview: None,
             cache: None,
-        });
+        };
 
-        let arrows_below_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("arrows_above"),
-            layout: Some(&arrows_pipeline_layout),
-            vertex: VertexState {
-                module: &shaders,
-                entry_point: Some("arrow_vert_below"),
-                compilation_options: Default::default(),
-                buffers: &[arrows_vertex_layout],
-            },
-            fragment: Some(FragmentState {
-                module: &shaders,
-                entry_point: Some("arrow_frag_below"),
-                compilation_options: Default::default(),
-                targets: DeferredRenderer::UNDERWATER_GBUFFER_TARGETS,
-            }),
-            primitive: PrimitiveState {
-                topology: PrimitiveTopology::TriangleStrip,
-                //cull_mode: Some(wgpu::Face::Back),
-                ..PrimitiveState::default()
-            },
-            depth_stencil: reverse_z(),
-            multisample: MultisampleState::default(),
-            multiview: None,
-            cache: None
-        });
+        let arrows_above_pipeline = gpu.device.create_render_pipeline(&arrows_above_pipeline_desc);
+
+        let arrows_below_pipeline = DeferredRenderer::create_refracted_pipeline(&gpu.device, &arrows_above_pipeline_desc);
 
         let arrows_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("arrows_buf"),
