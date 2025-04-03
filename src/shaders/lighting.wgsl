@@ -35,9 +35,12 @@ fn get_sky(look_dir: vec3f) -> vec3f {
 @group(1) @binding(4) var ao_buf: texture_2d<f32>;
 @group(1) @binding(5) var material_buf: texture_2d<u32>;
 
-@group(1) @binding(6) var water_buf: texture_2d<f32>;
-@group(1) @binding(7) var water_dist_buf: texture_depth_2d;
-@group(1) @binding(8) var water_sampler: sampler;
+@group(1) @binding(6) var trans_buf: texture_2d<f32>;
+@group(1) @binding(7) var trans_dist_buf: texture_depth_2d;
+@group(1) @binding(8) var refl_buf: texture_2d<f32>;
+@group(1) @binding(9) var refl_dist_buf: texture_depth_2d;
+@group(1) @binding(10) var water_sampler: sampler;
+@group(1) @binding(11) var water_int_sampler: sampler;
 
 @fragment fn do_global_lighting(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let px = vec2i(floor(pos.xy));
@@ -60,24 +63,37 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     if material == MAT_WATER {
         let look_dir = normalize(world_pos - camera.eye);
 
+        // transmitted color
         let refr_up = refract(look_dir, vec3f(0.0, 0.0, 1.0), 0.75);
         let refr_norm = refract(look_dir, normal, 0.75);
         let corr_xy = length(look_dir.xy) / length(refr_up.xy);
         let corr_z = look_dir.z / refr_up.z;
-        let trans_dir = normalize(vec3f(refr_norm.xy * corr_xy, refr_norm.z * corr_z)); // in planar-refracted space
-        let uw_dist_val = textureSampleLevel(water_dist_buf, water_sampler, uv, 0);
+        let virt_trans_dir = normalize(vec3f(refr_norm.xy * corr_xy, refr_norm.z * corr_z)); // in planar-refracted space
+        let uw_dist_val = textureSampleLevel(trans_dist_buf, water_sampler, uv, 0);
         let uw_dist = length(world_pos - camera.eye) * (dist_val / uw_dist_val - 1.0);
-        let refr_point = world_pos + uw_dist * trans_dir; // CSPR on
+        let refr_point = world_pos + uw_dist * virt_trans_dir; // CSPR on
         //let refr_point = world_pos + uw_dist * normalize(look_dir + 0.75 * (refr_norm - refr_up)); // CSPR off
         let refr_clip = camera.matrix * vec4f(refr_point, 1.0);
         let refr_uv1 = vec2f(0.5, -0.5) * refr_clip.xy / refr_clip.w + 0.5;
-        //let uw_dist_val_2 = textureSampleLevel(water_dist_buf, water_sampler, refr_uv1, 0.0);
+        //let uw_dist_val_2 = textureSampleLevel(trans_dist_buf, water_sampler, refr_uv1, 0.0);
         //let corr_uv = min(2.0, (1 / uw_dist_val_2 - 1 / dist_val) / (refr_clip.w / refr_clip.z - 1 / dist_val));
         //let refr_uv = uv + (refr_uv1 - uv) * corr_uv;
+        let trans = textureSampleLevel(trans_buf, water_sampler, refr_uv1, 0.0).xyz;
+
+        // reflected color
+        let refl_dist_val = max(textureSampleLevel(refl_dist_buf, water_sampler, uv, 0), 1e-4);
+        let refl_dist = length(world_pos - camera.eye) * (dist_val / refl_dist_val - 1.0);
+        let refl_norm = reflect(look_dir, normal);
+        let virt_refl_dir = vec3f(refl_norm.xy, -refl_norm.z);
+        let refl_point = world_pos + refl_dist * virt_refl_dir;
+        let refl_clip = camera.matrix * vec4f(refl_point, 1.0);
+        let refl_uv1 = vec2f(0.5, -0.5) * refl_clip.xy / refl_clip.w + 0.5;
+        let refl_raw = textureSampleLevel(refl_buf, water_sampler, refl_uv1, 0.0).xyz;
+        let refl_px = vec2i(floor(clamp(refl_uv1, vec2f(0), vec2f(1)) * camera.fb_size));
+        let refl_mask = textureLoad(material_buf, refl_px, 0).x;
+        let refl = refl_raw * select(0.1, 1.0, refl_mask == MAT_WATER);
 
         let fresnel = 0.02 + 0.98 * pow(1.0 - max(0.0, dot(normal, -look_dir)), 5.0);
-        let trans = textureSampleLevel(water_buf, water_sampler, refr_uv1, 0.0).xyz;
-        let refl = get_sky(reflect(look_dir, normal));
         color = mix(trans, refl, fresnel);
     } else {
         let albedo = textureLoad(albedo_buf, px, 0).xyz;
@@ -92,6 +108,42 @@ fn get_sky(look_dir: vec3f) -> vec3f {
             color = albedo * (ambient + direct);
         }
     }
+    return vec4f(color, 1.0);
+}
+
+@fragment fn do_reflected_lighting(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+    let px = vec2i(floor(pos.xy));
+    let uv = pos.xy / camera.water_fb_size;
+    let clip_xy = (uv - 0.5)  * vec2f(2, -2);
+    let material = textureLoad(material_buf, px, 0).x;
+    if material == MAT_SKY {
+        let clip_pos = vec4f(clip_xy * camera.clip_near, camera.clip_near, camera.clip_near);
+        let look_dir = normalize((camera.inv_matrix * clip_pos).xyz - camera.eye);
+        let sky = get_sky(vec3f(look_dir.xy, -look_dir.z));
+        return vec4f(sky, 1.0);
+    }
+
+    let dist_val = textureLoad(dist_buf, px, 0);
+    let clip_w = camera.clip_near / dist_val;
+    let clip_pos = vec4f(clip_xy * clip_w, camera.clip_near, clip_w);
+    let virt_pos = (camera.inv_matrix * clip_pos).xyz;
+    let world_pos = vec3f(virt_pos.xy, -virt_pos.z);
+
+    let normal = 2 * textureLoad(normal_buf, px, 0).xyz - 1;
+    var color: vec3f;
+
+    let albedo = textureLoad(albedo_buf, px, 0).xyz;
+    if material == MAT_EMIT {
+        color = albedo;
+    } else {
+        let ao = textureLoad(ao_buf, px, 0).x;
+        let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
+        let ambient = ao * amb_color;
+        let lambert = max(0.0, dot(normal, sun.sun_dir));
+        let direct = sun.sun_color * lambert * mix(ao, 1.0, lambert);
+        color = albedo * (ambient + direct);
+    }
+
     return vec4f(color, 1.0);
 }
 

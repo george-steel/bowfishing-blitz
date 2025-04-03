@@ -110,8 +110,9 @@ fn pack_h3(v: Vec3) -> [f16; 3] {
 }
 
 pub struct TargetController {
-    targets_above_pipeline: RenderPipeline,
-    targets_below_pipeline: RenderPipeline,
+    targets_pipeline: RenderPipeline,
+    targets_refr_pipeline: RenderPipeline,
+    targets_refl_pipeline: RenderPipeline,
     targets_buf: Buffer,
     targets_bg: BindGroup,
     smash_sounds: SoundAtlas,
@@ -242,8 +243,9 @@ impl TargetController {
             multiview: None,
             cache: None,
         };
-        let targets_above_pipeline = gpu.device.create_render_pipeline(&targets_pipeline_desc);
-        let targets_below_pipeline = DeferredRenderer::create_refracted_pipeline(&gpu.device, &targets_pipeline_desc);
+        let targets_pipeline = gpu.device.create_render_pipeline(&targets_pipeline_desc);
+        let targets_refr_pipeline = DeferredRenderer::create_refracted_pipeline(&gpu.device, &targets_pipeline_desc);
+        let targets_refl_pipeline = DeferredRenderer::create_reflected_pipeline(&gpu.device, &targets_pipeline_desc);
 
         let targets_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("pots_buf"),
@@ -281,7 +283,7 @@ impl TargetController {
             &[0.0, 1.57, 2.84, 4.02, 5.43, 6.98, 8.38, 9.68, 10.97, 12.32, 13.58, 15.30, 16.73, 18.12]).unwrap();
 
         TargetController {
-            targets_above_pipeline, targets_below_pipeline,
+            targets_pipeline, targets_refr_pipeline, targets_refl_pipeline,
             targets_buf, targets_bg,
             smash_sounds,
             max_target_inst: 0,
@@ -321,7 +323,14 @@ impl RenderObject for TargetController {
 
     fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {
         if self.max_target_inst != 0 {
-            pass.set_pipeline(&self.targets_below_pipeline);
+            pass.set_pipeline(&self.targets_refr_pipeline);
+            pass.set_bind_group(1, &self.targets_bg, &[]);
+            pass.draw(0..NUM_POT_VERTS, 0..self.max_target_inst);
+        }
+    }
+    fn draw_reflected<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {
+        if self.max_target_inst != 0 {
+            pass.set_pipeline(&self.targets_refl_pipeline);
             pass.set_bind_group(1, &self.targets_bg, &[]);
             pass.draw(0..NUM_POT_VERTS, 0..self.max_target_inst);
         }
@@ -329,7 +338,7 @@ impl RenderObject for TargetController {
 
     fn draw_opaque<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {
         if self.max_target_inst != 0 {
-            pass.set_pipeline(&self.targets_above_pipeline);
+            pass.set_pipeline(&self.targets_pipeline);
             pass.set_bind_group(1, &self.targets_bg, &[]);
             pass.draw(0..NUM_POT_VERTS, 0..self.max_target_inst);
         }

@@ -79,8 +79,13 @@ fn clip_point(world_pos: vec3f) -> vec4f {
 
 fn guard_frag(world_pos: vec3f) {
     switch PATH_ID {
-        case PATH_DIRECT, PATH_REFLECT {
+        case PATH_DIRECT{
             if world_pos.z < -0.05 {
+                discard;
+            }
+        }
+        case PATH_REFLECT {
+            if world_pos.z < -0.5 {
                 discard;
             }
         }

@@ -115,8 +115,9 @@ const MAX_SPLISHES: usize = 16;
 const SPLISH_DURATION: f32 = 2.0;
 
 pub struct ArrowController {
-    arrows_above_pipeline: RenderPipeline,
-    arrows_below_pipeline: RenderPipeline,
+    arrows_pipeline: RenderPipeline,
+    arrows_refr_pipeline: RenderPipeline,
+    arrows_refl_pipeline: RenderPipeline,
     arrows_model: Box<[ArrowVert]>,
     arrows_vertex_buf: Buffer,
     arrows_buf: Buffer,
@@ -208,9 +209,9 @@ impl ArrowController {
             cache: None,
         };
 
-        let arrows_above_pipeline = gpu.device.create_render_pipeline(&arrows_above_pipeline_desc);
-
-        let arrows_below_pipeline = DeferredRenderer::create_refracted_pipeline(&gpu.device, &arrows_above_pipeline_desc);
+        let arrows_pipeline = gpu.device.create_render_pipeline(&arrows_above_pipeline_desc);
+        let arrows_refr_pipeline = DeferredRenderer::create_refracted_pipeline(&gpu.device, &arrows_above_pipeline_desc);
+        let arrows_refl_pipeline = DeferredRenderer::create_reflected_pipeline(&gpu.device, &arrows_above_pipeline_desc);
 
         let arrows_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("arrows_buf"),
@@ -299,7 +300,7 @@ impl ArrowController {
 
         let dead_arrows = bytemuck::zeroed_slice_box(MAX_DEAD_ARROWS);
         ArrowController {
-            arrows_above_pipeline, arrows_below_pipeline,
+            arrows_pipeline, arrows_refr_pipeline, arrows_refl_pipeline,
             arrows_model, arrows_vertex_buf, arrows_buf, arrows_bg,
             release_sounds, splish_sounds, thunk_sounds,
             max_arrow_inst: 0,
@@ -459,7 +460,16 @@ impl RenderObject for ArrowController {
 
     fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &crate::deferred_renderer::DeferredRenderer, pass: &mut RenderPass<'a>) {
         if self.max_arrow_inst != 0 {
-            pass.set_pipeline(&self.arrows_below_pipeline);
+            pass.set_pipeline(&self.arrows_refr_pipeline);
+            pass.set_vertex_buffer(0, self.arrows_vertex_buf.slice(..));
+            pass.set_bind_group(1, &self.arrows_bg, &[]);
+            pass.draw(0..(self.arrows_model.len() as u32), 0..self.max_arrow_inst);
+        }
+
+    }
+    fn draw_reflected<'a>(&'a self, gpu: &GPUContext, renderer: &crate::deferred_renderer::DeferredRenderer, pass: &mut RenderPass<'a>) {
+        if self.max_arrow_inst != 0 {
+            pass.set_pipeline(&self.arrows_refl_pipeline);
             pass.set_vertex_buffer(0, self.arrows_vertex_buf.slice(..));
             pass.set_bind_group(1, &self.arrows_bg, &[]);
             pass.draw(0..(self.arrows_model.len() as u32), 0..self.max_arrow_inst);
@@ -468,7 +478,7 @@ impl RenderObject for ArrowController {
     }
     fn draw_opaque<'a>(&'a self, gpu: &GPUContext, renderer: &crate::deferred_renderer::DeferredRenderer, pass: &mut RenderPass<'a>) {
         if self.max_arrow_inst != 0  {
-            pass.set_pipeline(&self.arrows_above_pipeline);
+            pass.set_pipeline(&self.arrows_pipeline);
             pass.set_vertex_buffer(0, self.arrows_vertex_buf.slice(..));
             pass.set_bind_group(1, &self.arrows_bg, &[]);
             pass.draw(0..(self.arrows_model.len() as u32), 0..self.max_arrow_inst);

@@ -15,6 +15,9 @@ pub trait RenderObject {
     // Draw underwater geometry to its refracted positions.
     fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {}
 
+    // Draw geometry to its reflected positions.
+    fn draw_reflected<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {}
+
     // draw opaque geometry
     fn draw_opaque<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>);
 
@@ -61,6 +64,7 @@ impl GlobalLighting {
 struct DeferredRendererTextures {
     size: UVec2,
     water_size: UVec2,
+    // main gbuffers
     dist: Texture,
     dist_view: TextureView,
     albedo: Texture,
@@ -73,20 +77,36 @@ struct DeferredRendererTextures {
     ao_view: TextureView,
     material: Texture,
     material_view: TextureView,
+    // reflected
+    water_refl: Texture,
+    water_refl_view: TextureView,
+    water_refl_dist: Texture,
+    water_refl_dist_view: TextureView,
+    water_refl_albedo: Texture,
+    water_refl_albedo_view: TextureView,
+    water_refl_normal: Texture,
+    water_refl_normal_view: TextureView,
+    water_refl_rough_metal: Texture,
+    water_refl_rm_view: TextureView,
+    water_refl_ao: Texture,
+    water_refl_ao_view: TextureView,
+    water_refl_material: Texture,
+    water_refl_material_view: TextureView,
+    // refracted
     water_trans: Texture,
     water_trans_view: TextureView,
     water_trans_dist: Texture,
     water_trans_dist_view: TextureView,
-    water_albedo: Texture,
-    water_albedo_view: TextureView,
-    water_normal: Texture,
-    water_normal_view: TextureView,
-    water_rough_metal: Texture,
-    water_rm_view: TextureView,
-    water_ao: Texture,
-    water_ao_view: TextureView,
-    water_material: Texture,
-    water_material_view: TextureView,
+    water_trans_albedo: Texture,
+    water_trans_albedo_view: TextureView,
+    water_trans_normal: Texture,
+    water_trans_normal_view: TextureView,
+    water_trans_rough_metal: Texture,
+    water_trans_rm_view: TextureView,
+    water_trans_ao: Texture,
+    water_trans_ao_view: TextureView,
+    water_trans_material: Texture,
+    water_trans_material_view: TextureView,
 }
 
 impl DeferredRendererTextures {
@@ -97,13 +117,15 @@ impl DeferredRendererTextures {
         self.rough_metal.destroy();
         self.ao.destroy();
         self.material.destroy();
+        self.water_refl.destroy();
+        self.water_refl_dist.destroy();
         self.water_trans.destroy();
         self.water_trans_dist.destroy();
-        self.water_albedo.destroy();
-        self.water_normal.destroy();
-        self.water_rough_metal.destroy();
-        self.water_ao.destroy();
-        self.water_material.destroy();
+        self.water_trans_albedo.destroy();
+        self.water_trans_normal.destroy();
+        self.water_trans_rough_metal.destroy();
+        self.water_trans_ao.destroy();
+        self.water_trans_material.destroy();
     }
 
     fn create(gpu: &GPUContext, output_size: UVec2) -> Self {
@@ -120,13 +142,20 @@ impl DeferredRendererTextures {
         let (rough_metal, rm_view) = gpu.create_empty_texture(size_3d, TextureFormat::Rg8Unorm, "rough-metal");
         let (ao, ao_view) = gpu.create_empty_texture(size_3d, TextureFormat::R8Unorm, "ao");
         let (material, material_view) = gpu.create_empty_texture(size_3d, TextureFormat::R8Uint, "material");
-        let (water, water_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Ufloat, "water-out");
-        let (water_dist, water_dist_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Depth32Float, "water-dist");
-        let (water_albedo, water_albedo_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Ufloat, "water-albedo");
-        let (water_normal, water_normal_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rgb10a2Unorm, "water-normal");
-        let (water_rough_metal, water_rm_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg8Unorm, "water-rough-metal");
-        let (water_ao, water_ao_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Unorm, "water-ao");
-        let (water_material, water_material_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Uint, "water-material");
+        let (water_refl, water_refl_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Ufloat, "water-refl-out");
+        let (water_refl_dist, water_refl_dist_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Depth32Float, "water-refl-dist");
+        let (water_refl_albedo, water_refl_albedo_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Ufloat, "water-refl-albedo");
+        let (water_refl_normal, water_refl_normal_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rgb10a2Unorm, "water-refl-normal");
+        let (water_refl_rough_metal, water_refl_rm_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg8Unorm, "water-refl-rough-metal");
+        let (water_refl_ao, water_refl_ao_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Unorm, "water-refl-ao");
+        let (water_refl_material, water_refl_material_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Uint, "water-refl-material");
+        let (water_trans, water_trans_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Ufloat, "water-trans-out");
+        let (water_trans_dist, water_trans_dist_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Depth32Float, "water-trans-dist");
+        let (water_trans_albedo, water_trans_albedo_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg11b10Ufloat, "water-trans-albedo");
+        let (water_trans_normal, water_trans_normal_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rgb10a2Unorm, "water-trans-normal");
+        let (water_trans_rough_metal, water_trans_rm_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg8Unorm, "water-trans-rough-metal");
+        let (water_trans_ao, water_trans_ao_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Unorm, "water-trans-ao");
+        let (water_trans_material, water_trans_material_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Uint, "water-trans-material");
 
         Self {
             size, water_size,
@@ -136,13 +165,20 @@ impl DeferredRendererTextures {
             rough_metal, rm_view,
             ao, ao_view,
             material, material_view,
-            water_trans: water, water_trans_view: water_view,
-            water_trans_dist: water_dist, water_trans_dist_view: water_dist_view,
-            water_albedo, water_albedo_view,
-            water_normal, water_normal_view,
-            water_rough_metal, water_rm_view,
-            water_ao, water_ao_view,
-            water_material, water_material_view,
+            water_refl, water_refl_view,
+            water_refl_dist, water_refl_dist_view,
+            water_refl_albedo, water_refl_albedo_view,
+            water_refl_normal, water_refl_normal_view,
+            water_refl_rough_metal, water_refl_rm_view,
+            water_refl_ao, water_refl_ao_view,
+            water_refl_material, water_refl_material_view,
+            water_trans, water_trans_view,
+            water_trans_dist, water_trans_dist_view,
+            water_trans_albedo, water_trans_albedo_view,
+            water_trans_normal, water_trans_normal_view,
+            water_trans_rough_metal, water_trans_rm_view,
+            water_trans_ao, water_trans_ao_view,
+            water_trans_material, water_trans_material_view,
         }
     }
 }
@@ -160,9 +196,11 @@ pub struct DeferredRenderer {
     water_sampler: Sampler,
     water_gbuffer_bind_layout: BindGroupLayout,
     water_trans_gbuffer_bind_group: BindGroup,
+    water_refl_gbuffer_bind_group: BindGroup,
     lighting_bind_group: BindGroup,
     lighting_pipeline: RenderPipeline,
     underwater_lighting_pipeline: RenderPipeline,
+    reflected_lighting_pipeline: RenderPipeline,
 }
 
 impl DeferredRenderer {
@@ -245,7 +283,17 @@ impl DeferredRenderer {
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 8, // bilinear for water transmission
+                    binding: 8, // reflected color
+                    ty: BindingType::Texture { sample_type: TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::D2, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 9, // reflected distance
+                    ty: BindingType::Texture { sample_type: TextureSampleType::Depth, view_dimension: TextureViewDimension::D2, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 10, // bilinear for water transmission
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
@@ -271,7 +319,9 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&gbuffers.material_view)},
                 BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_view)},
                 BindGroupEntry {binding: 7, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_dist_view)},
-                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::Sampler(&water_sampler)},
+                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_view)},
+                BindGroupEntry {binding: 9, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_dist_view)},
+                BindGroupEntry {binding: 10, resource: wgpu::BindingResource::Sampler(&water_sampler)},
             ]
         });
 
@@ -316,11 +366,24 @@ impl DeferredRenderer {
             layout: &water_gbuffer_bind_layout,
             entries: &[
                 BindGroupEntry {binding: 0, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_dist_view)},
-                BindGroupEntry {binding: 1, resource: wgpu::BindingResource::TextureView(&gbuffers.water_albedo_view)},
-                BindGroupEntry {binding: 2, resource: wgpu::BindingResource::TextureView(&gbuffers.water_normal_view)},
-                BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&gbuffers.water_rm_view)},
-                BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&gbuffers.water_ao_view)},
-                BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&gbuffers.water_material_view)},
+                BindGroupEntry {binding: 1, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_albedo_view)},
+                BindGroupEntry {binding: 2, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_normal_view)},
+                BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_rm_view)},
+                BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_ao_view)},
+                BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_material_view)},
+            ]
+        });
+
+        let water_refl_gbuffer_bind_group = gpu.device.create_bind_group(&BindGroupDescriptor{
+            label: Some("water_gbuffer_bind_group"),
+            layout: &water_gbuffer_bind_layout,
+            entries: &[
+                BindGroupEntry {binding: 0, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_dist_view)},
+                BindGroupEntry {binding: 1, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_albedo_view)},
+                BindGroupEntry {binding: 2, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_normal_view)},
+                BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_rm_view)},
+                BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_ao_view)},
+                BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_material_view)},
             ]
         });
 
@@ -415,7 +478,7 @@ impl DeferredRenderer {
             cache: None
         });
 
-        let underwater_lighting_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        let indirect_lighting_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("lighting_pipeline_layout"),
             bind_group_layouts: &[
                 &global_bind_layout,
@@ -426,8 +489,8 @@ impl DeferredRenderer {
         });
 
         let underwater_lighting_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("lighting_pipeline"),
-            layout: Some(&underwater_lighting_pipeline_layout),
+            label: Some("underwater_lighting_pipeline"),
+            layout: Some(&indirect_lighting_pipeline_layout),
             vertex: VertexState {
                 module: &lighting_shaders,
                 entry_point: Some("fullscreen_tri"),
@@ -450,6 +513,31 @@ impl DeferredRenderer {
             cache: None,
         });
 
+        let reflected_lighting_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("reflected_lighting_pipeline"),
+            layout: Some(&indirect_lighting_pipeline_layout),
+            vertex: VertexState {
+                module: &lighting_shaders,
+                entry_point: Some("fullscreen_tri"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(FragmentState {
+                module: &lighting_shaders,
+                entry_point: Some("do_reflected_lighting"),
+                compilation_options: Default::default(),
+                targets: &[Some(ColorTargetState{ format: TextureFormat::Rg11b10Ufloat, blend: None, write_mask: ColorWrites::ALL })],
+            }),
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
 
         Box::new(DeferredRenderer {
             lighting_shaders,
@@ -458,9 +546,9 @@ impl DeferredRenderer {
             main_camera_buf, camera,
 
             gbuffer_bind_layout, gbuffer_bind_group, water_sampler,
-            water_gbuffer_bind_layout, water_trans_gbuffer_bind_group,
+            water_gbuffer_bind_layout, water_trans_gbuffer_bind_group, water_refl_gbuffer_bind_group,
             lighting_bind_group,
-            lighting_pipeline, underwater_lighting_pipeline,
+            lighting_pipeline, underwater_lighting_pipeline, reflected_lighting_pipeline,
         })
     }
 
@@ -481,7 +569,9 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&self.gbuffers.material_view)},
                 BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_view)},
                 BindGroupEntry {binding: 7, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_dist_view)},
-                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::Sampler(&self.water_sampler)},
+                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_view)},
+                BindGroupEntry {binding: 9, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_dist_view)},
+                BindGroupEntry {binding: 10, resource: wgpu::BindingResource::Sampler(&self.water_sampler)},
             ]
         });
 
@@ -490,11 +580,24 @@ impl DeferredRenderer {
             layout: &self.water_gbuffer_bind_layout,
             entries: &[
                 BindGroupEntry {binding: 0, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_dist_view)},
-                BindGroupEntry {binding: 1, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_albedo_view)},
-                BindGroupEntry {binding: 2, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_normal_view)},
-                BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_rm_view)},
-                BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_ao_view)},
-                BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_material_view)},
+                BindGroupEntry {binding: 1, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_albedo_view)},
+                BindGroupEntry {binding: 2, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_normal_view)},
+                BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_rm_view)},
+                BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_ao_view)},
+                BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_material_view)},
+            ]
+        });
+
+        self.water_refl_gbuffer_bind_group = gpu.device.create_bind_group(&BindGroupDescriptor{
+            label: Some("water_gbuffer_bind_group"),
+            layout: &self.water_gbuffer_bind_layout,
+            entries: &[
+                BindGroupEntry {binding: 0, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_dist_view)},
+                BindGroupEntry {binding: 1, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_albedo_view)},
+                BindGroupEntry {binding: 2, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_normal_view)},
+                BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_rm_view)},
+                BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_ao_view)},
+                BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_material_view)},
             ]
         });
     }
@@ -511,30 +614,30 @@ impl DeferredRenderer {
 
         {
             let mut underwater_pass = command_encoder.begin_render_pass(&RenderPassDescriptor{
-                label: Some("opaque-pass"),
+                label: Some("refracted-opaque-pass"),
                 color_attachments: &[
                     Some(RenderPassColorAttachment{
-                        view: &self.gbuffers.water_albedo_view,
+                        view: &self.gbuffers.water_trans_albedo_view,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
-                        view: &self.gbuffers.water_normal_view,
+                        view: &self.gbuffers.water_trans_normal_view,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
-                        view: &self.gbuffers.water_rm_view,
+                        view: &self.gbuffers.water_trans_rm_view,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
-                        view: &self.gbuffers.water_ao_view,
+                        view: &self.gbuffers.water_trans_ao_view,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
-                        view: &self.gbuffers.water_material_view,
+                        view: &self.gbuffers.water_trans_material_view,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
@@ -556,7 +659,7 @@ impl DeferredRenderer {
         }
         {
             let mut underwater_lighting_pass = command_encoder.begin_render_pass(&RenderPassDescriptor{
-                label: Some("lighting_pass"),
+                label: Some("refracted-lighting_pass"),
                 color_attachments: &[Some(RenderPassColorAttachment{
                     view: &self.gbuffers.water_trans_view,
                     resolve_target: None,
@@ -573,6 +676,72 @@ impl DeferredRenderer {
             underwater_lighting_pass.set_bind_group(2, &self.lighting_bind_group, &[]);
             underwater_lighting_pass.draw(0..3, 0..1);
         }
+        {
+            let mut reflected_pass = command_encoder.begin_render_pass(&RenderPassDescriptor{
+                label: Some("reflected-opaque-pass"),
+                color_attachments: &[
+                    Some(RenderPassColorAttachment{
+                        view: &self.gbuffers.water_refl_albedo_view,
+                        resolve_target: None,
+                        ops: ZERO_COLOR,
+                    }),
+                    Some(RenderPassColorAttachment{
+                        view: &self.gbuffers.water_refl_normal_view,
+                        resolve_target: None,
+                        ops: ZERO_COLOR,
+                    }),
+                    Some(RenderPassColorAttachment{
+                        view: &self.gbuffers.water_refl_rm_view,
+                        resolve_target: None,
+                        ops: ZERO_COLOR,
+                    }),
+                    Some(RenderPassColorAttachment{
+                        view: &self.gbuffers.water_refl_ao_view,
+                        resolve_target: None,
+                        ops: ZERO_COLOR,
+                    }),
+                    Some(RenderPassColorAttachment{
+                        view: &self.gbuffers.water_refl_material_view,
+                        resolve_target: None,
+                        ops: ZERO_COLOR,
+                    }),
+                ],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment{
+                    view: &self.gbuffers.water_refl_dist_view,
+                    depth_ops: Some(Operations{load: LoadOp::Clear(0.0), store: StoreOp::Store}),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            reflected_pass.set_bind_group(0, &self.global_bind_group, &[]);
+
+            for obj in scene.iter() {
+                obj.draw_reflected(gpu, &self, &mut reflected_pass);
+            }
+        }
+        {
+            let mut reflected_lighting_pass = command_encoder.begin_render_pass(&RenderPassDescriptor{
+                label: Some("reflected-lighting_pass"),
+                color_attachments: &[Some(RenderPassColorAttachment{
+                    view: &self.gbuffers.water_refl_view,
+                    resolve_target: None,
+                    ops: ZERO_COLOR,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            reflected_lighting_pass.set_pipeline(&self.reflected_lighting_pipeline);
+            reflected_lighting_pass.set_bind_group(0, &self.global_bind_group, &[]);
+            reflected_lighting_pass.set_bind_group(1, &self.water_refl_gbuffer_bind_group, &[]);
+            reflected_lighting_pass.set_bind_group(2, &self.lighting_bind_group, &[]);
+            reflected_lighting_pass.draw(0..3, 0..1);
+        }
+
+        // direct path
         {
             let mut opaque_pass = command_encoder.begin_render_pass(&RenderPassDescriptor{
                 label: Some("opaque-pass"),
@@ -662,6 +831,21 @@ impl DeferredRenderer {
         desc2.vertex.compilation_options.constants = &overrides;
         if let Some(frag) = desc2.fragment.as_mut() {
            frag.compilation_options.constants = &overrides;
+        };
+        device.create_render_pipeline(&desc2)
+    }
+
+    pub fn create_reflected_pipeline(device: &wgpu::Device, desc: &wgpu::RenderPipelineDescriptor) -> wgpu::RenderPipeline {
+        let mut desc2 = desc.clone();
+
+        let overrides = HashMap::from([(String::from("PATH_ID"), Self::PATH_REFLECT as f64)]);
+        desc2.vertex.compilation_options.constants = &overrides;
+        if let Some(frag) = desc2.fragment.as_mut() {
+           frag.compilation_options.constants = &overrides;
+        };
+        desc2.primitive.front_face = match desc2.primitive.front_face {
+            FrontFace::Cw => FrontFace::Ccw,
+            FrontFace::Ccw => FrontFace::Cw,
         };
         device.create_render_pipeline(&desc2)
     }

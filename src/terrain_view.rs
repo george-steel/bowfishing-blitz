@@ -56,6 +56,7 @@ struct TerrainParams {
 pub struct TerrainView {
     terrain_pipeline: wgpu::RenderPipeline,
     underwater_terrain_pipeline: wgpu::RenderPipeline,
+    reflected_terrain_pipeline: wgpu::RenderPipeline,
     water_pipeline: wgpu::RenderPipeline,
     params: TerrainParams,
     params_buf: wgpu::Buffer,
@@ -144,6 +145,7 @@ impl TerrainView {
         };
         let terrain_pipeline = gpu.device.create_render_pipeline(&terrain_pipeline_desc);
         let underwater_terrain_pipeline = DeferredRenderer::create_refracted_pipeline(&gpu.device, &terrain_pipeline_desc);
+        let reflected_terrain_pipeline = DeferredRenderer::create_reflected_pipeline(&gpu.device, &terrain_pipeline_desc);
 
         let water_pipeline = gpu.device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: None,
@@ -229,7 +231,7 @@ impl TerrainView {
         });
 
         TerrainView {
-            terrain_pipeline, underwater_terrain_pipeline, water_pipeline,
+            terrain_pipeline, underwater_terrain_pipeline, reflected_terrain_pipeline, water_pipeline,
             params, params_buf, terrain_bind_group,
         }
     }
@@ -238,6 +240,12 @@ impl TerrainView {
 impl RenderObject for TerrainView {
     fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut wgpu::RenderPass<'a>) {
         pass.set_pipeline(&self.underwater_terrain_pipeline);
+        pass.set_bind_group(1, &self.terrain_bind_group, &[]);
+        pass.draw(0..(2 * self.params.grid_size + 2), 0..(self.params.grid_size));
+    }
+
+    fn draw_reflected<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut wgpu::RenderPass<'a>) {
+        pass.set_pipeline(&self.reflected_terrain_pipeline);
         pass.set_bind_group(1, &self.terrain_bind_group, &[]);
         pass.draw(0..(2 * self.params.grid_size + 2), 0..(self.params.grid_size));
     }
