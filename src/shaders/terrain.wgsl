@@ -122,7 +122,7 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     out.albedo = vec4f(albedo, 1.0);
     out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
     out.occlusion = params.co.w;
-    out.rough_metal = vec2f(params.nr.w, 0.0);
+    out.rough_metal = vec2f(params.nr.w, 0.02);
     out.mat_type = MAT_SOLID;
     return out;
 }

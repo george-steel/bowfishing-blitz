@@ -85,7 +85,7 @@ fn guard_frag(world_pos: vec3f) {
             }
         }
         case PATH_REFLECT {
-            if world_pos.z < -0.5 {
+            if world_pos.z < -0.1 {
                 discard;
             }
         }
