@@ -1,6 +1,6 @@
 const TAU = 6.2831853072;
 
-override FFTSIZE: u32 = 512;
+override FFTSIZE: u32 = 1024;
 
 alias comp_colors = mat2x3f;
 
@@ -55,7 +55,7 @@ override IMG_HEIGHT = 256;
 
 @group(0) @binding(0) var tex_in: texture_2d<f32>;
 @group(0) @binding(1) var tex_in_samp: sampler;
-@group(0) @binding(2) var tex_out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(2) var tex_out: texture_storage_2d<rgba32float, write>;
 
 fn get_tex_in(col: u32, row: u32) -> vec3f {
     let u = (f32(col) + 0.5) / f32(FFTSIZE);
@@ -70,27 +70,6 @@ fn get_tex_in(col: u32, row: u32) -> vec3f {
 
     fft_buf[col] = mat2x3f(get_tex_in(col, row), get_tex_in(col, row+1));
     fft_buf[col+1] = mat2x3f(get_tex_in(col+1, row), get_tex_in(col+1, row+1));
-
-    {
-        workgroupBarrier();
-        do_fft(local_id.x, false);
-        // extract two Hartley transforms from FFT
-        let i = local_id.x;
-        let j = select(FFTSIZE - i, FFTSIZE / 2, i == 0);
-        let fi = fft_buf[i];
-        let fj = fft_buf[j];
-        var hi = fi;
-        var hj = fj;
-        if i != 0 {
-            hi = 0.5 * (comp_smul(vec2f(1, 1), fi) + comp_smul(vec2f(1, -1), fj));
-            hj = 0.5 * (comp_smul(vec2f(1, 1), fj) + comp_smul(vec2f(1, -1), fi));
-        }
-
-        workgroupBarrier();
-        fft_buf[i] = hi;
-        fft_buf[j] = hj;
-    }
-
     
     workgroupBarrier();
     do_fft(local_id.x, false);

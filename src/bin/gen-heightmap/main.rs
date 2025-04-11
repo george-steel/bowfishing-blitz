@@ -23,10 +23,11 @@ fn main() {
     let window = event_loop.create_window(Window::default_attributes()).unwrap();
     let surface = wgpu_inst.create_surface(&window).unwrap();
     
-    let gpu = pollster::block_on(GPUContext::with_default_limits(
+    let gpu = pollster::block_on(GPUContext::with_limits(
         wgpu_inst,
         Some(&surface),
-        wgpu::Features::MAPPABLE_PRIMARY_BUFFERS
+        wgpu::Features::MAPPABLE_PRIMARY_BUFFERS,
+        Default::default(),
     ));
     let limits = gpu.adapter.limits();
     //log::info!("Limits: {:#?}", &limits);

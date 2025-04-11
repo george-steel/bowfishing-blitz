@@ -1,6 +1,7 @@
 use bowfishing_blitz::*;
 use gputil::*;
 use camera::*;
+use wgpu::Features;
 
 mod ibl_filter;
 
@@ -23,10 +24,16 @@ fn main() {
     let window = event_loop.create_window(Window::default_attributes()).unwrap();
     let surface = wgpu_inst.create_surface(&window).unwrap();
     
-    let gpu = pollster::block_on(GPUContext::with_default_limits(
+    let gpu = pollster::block_on(GPUContext::with_limits(
         wgpu_inst,
         Some(&surface),
-        wgpu::Features::MAPPABLE_PRIMARY_BUFFERS
+        Features::SUBGROUP | Features::FLOAT32_FILTERABLE,
+        wgpu::Limits {
+            max_compute_workgroup_size_x: 512,
+            max_compute_invocations_per_workgroup: 512,
+            max_compute_workgroup_storage_size: 65536,
+            ..Default::default()
+        },
     ));
     let limits = gpu.adapter.limits();
     //log::info!("Limits: {:#?}", &limits);

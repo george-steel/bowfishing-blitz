@@ -72,8 +72,8 @@ impl IBLFilter {
 
         let filtered_tex = gpu.device.create_texture(&wgpu::TextureDescriptor{
             label: Some("filtered_tex"),
-            size: Extent3d{width: 512, height: 256, depth_or_array_layers: 1},
-            format: TextureFormat::Rgba16Float,
+            size: Extent3d{width: 1024, height: 512, depth_or_array_layers: 1},
+            format: TextureFormat::Rgba32Float,
             mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
             view_formats: &[],
@@ -82,8 +82,8 @@ impl IBLFilter {
         let sampler = gpu.device.create_sampler(&SamplerDescriptor {
             address_mode_u: AddressMode::Repeat,
             address_mode_v: AddressMode::MirrorRepeat,
-            mag_filter: FilterMode::Nearest,
-            min_filter: FilterMode::Nearest,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
             ..Default::default()
         });
         let disp_bg = gpu.device.create_bind_group(&BindGroupDescriptor{
@@ -164,7 +164,7 @@ impl IBLFilter {
                     visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::WriteOnly,
-                        format: TextureFormat::Rgba16Float,
+                        format: TextureFormat::Rgba32Float,
                         view_dimension: TextureViewDimension::D2,
                     },
                     count: None,
@@ -184,13 +184,40 @@ impl IBLFilter {
             compilation_options: Default::default(),
             cache: None,
         });
-        let fht_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
+        let hspec_tex_1 = gpu.device.create_texture(&wgpu::TextureDescriptor{
+            label: Some("filtered_tex"),
+            size: Extent3d{width: 1024, height: 512, depth_or_array_layers: 1},
+            format: TextureFormat::Rgba32Float,
+            mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let hspec_view_1 = hspec_tex_1.create_view(&Default::default());
+        let fht1_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
             label: Some("fht_bind"),
             layout: &fht_bg_layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
                     resource: BindingResource::TextureView(&in_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&self.sampler),
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: BindingResource::TextureView(&hspec_view_1),
+                },
+            ],
+        });
+        let fht2_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
+            label: Some("fht_bind"),
+            layout: &fht_bg_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&hspec_view_1),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -211,8 +238,14 @@ impl IBLFilter {
         {
             let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("dht_pass"), timestamp_writes: None });
             pass.set_pipeline(&dht_pipeline);
-            pass.set_bind_group(0, &fht_bind, &[]);
-            pass.dispatch_workgroups(128, 1, 1);
+            pass.set_bind_group(0, &fht1_bind, &[]);
+            pass.dispatch_workgroups(256, 1, 1);
+        }
+        {
+            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("dht_pass"), timestamp_writes: None });
+            pass.set_pipeline(&dht_pipeline);
+            pass.set_bind_group(0, &fht2_bind, &[]);
+            pass.dispatch_workgroups(256, 1, 1);
         }
 
         gpu.queue.submit([encoder.finish()]);
