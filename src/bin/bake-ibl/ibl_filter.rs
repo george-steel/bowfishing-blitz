@@ -73,7 +73,7 @@ impl IBLFilter {
         let filtered_tex = gpu.device.create_texture(&wgpu::TextureDescriptor{
             label: Some("filtered_tex"),
             size: Extent3d{width: 1024, height: 512, depth_or_array_layers: 1},
-            format: TextureFormat::Rgba32Float,
+            format: TextureFormat::Rgba16Float,
             mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
             view_formats: &[],
@@ -140,7 +140,8 @@ impl IBLFilter {
         let in_tex = gpu.load_rgbe8_texture("./assets/sky-equirect.rgbe8.png").expect("Failed to load sky");
         let in_view = in_tex.create_view(&Default::default());
 
-        let fht_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor{
+        const BUFFER_SIZE: u64 = 1024*512*4*4;
+        let fht1_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor{
             label: Some("fht_bg_layout"),
             entries: &[
                 BindGroupLayoutEntry {
@@ -162,40 +163,77 @@ impl IBLFilter {
                 BindGroupLayoutEntry {
                     binding: 2,
                     visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer{
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ]
+        });
+        let fht1_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
+            label: Some("fht1_layout"),
+            bind_group_layouts: &[&fht1_bg_layout],
+            push_constant_ranges: &[]
+        });
+        let fht1_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
+            label: Some("fht1_pipeline"),
+            layout: Some(&fht1_layout),
+            module: &self.bake_shader,
+            entry_point: Some("horiz_fht_tex_to_buf"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let fht2_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor{
+            label: Some("fht_bg_layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
                     ty: BindingType::StorageTexture {
                         access: StorageTextureAccess::WriteOnly,
-                        format: TextureFormat::Rgba32Float,
+                        format: TextureFormat::Rgba16Float,
                         view_dimension: TextureViewDimension::D2,
                     },
                     count: None,
                 },
             ]
         });
-        let fht_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
-            label: Some("fht_layout"),
-            bind_group_layouts: &[&fht_bg_layout],
+        let fht2_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
+            label: Some("fht2_layout"),
+            bind_group_layouts: &[&fht2_bg_layout],
             push_constant_ranges: &[]
         });
-        let dht_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
-            label: Some("dht_pipeline"),
-            layout: Some(&fht_layout),
+        let fht2_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
+            label: Some("fht1_pipeline"),
+            layout: Some(&fht2_layout),
             module: &self.bake_shader,
-            entry_point: Some("horiz_fht"),
+            entry_point: Some("horiz_fht_buf_to_tex"),
             compilation_options: Default::default(),
             cache: None,
         });
-        let hspec_tex_1 = gpu.device.create_texture(&wgpu::TextureDescriptor{
-            label: Some("filtered_tex"),
-            size: Extent3d{width: 1024, height: 512, depth_or_array_layers: 1},
-            format: TextureFormat::Rgba32Float,
-            mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
-            view_formats: &[],
+
+        let hspec_buf = gpu.device.create_buffer(&BufferDescriptor {
+            label: Some("hspec_buf"),
+            size: BUFFER_SIZE,
+            usage: BufferUsages::STORAGE,
+            mapped_at_creation: false 
         });
-        let hspec_view_1 = hspec_tex_1.create_view(&Default::default());
         let fht1_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
             label: Some("fht_bind"),
-            layout: &fht_bg_layout,
+            layout: &fht1_bg_layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
@@ -207,24 +245,20 @@ impl IBLFilter {
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: BindingResource::TextureView(&hspec_view_1),
+                    resource: hspec_buf.as_entire_binding(),
                 },
             ],
         });
         let fht2_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
             label: Some("fht_bind"),
-            layout: &fht_bg_layout,
+            layout: &fht2_bg_layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&hspec_view_1),
+                    resource: hspec_buf.as_entire_binding(),
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::Sampler(&self.sampler),
-                },
-                BindGroupEntry {
-                    binding: 2,
                     resource: BindingResource::TextureView(&self.filtered_view),
                 },
             ],
@@ -237,13 +271,13 @@ impl IBLFilter {
 
         {
             let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("dht_pass"), timestamp_writes: None });
-            pass.set_pipeline(&dht_pipeline);
+            pass.set_pipeline(&fht1_pipeline);
             pass.set_bind_group(0, &fht1_bind, &[]);
             pass.dispatch_workgroups(256, 1, 1);
         }
         {
             let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("dht_pass"), timestamp_writes: None });
-            pass.set_pipeline(&dht_pipeline);
+            pass.set_pipeline(&fht2_pipeline);
             pass.set_bind_group(0, &fht2_bind, &[]);
             pass.dispatch_workgroups(256, 1, 1);
         }

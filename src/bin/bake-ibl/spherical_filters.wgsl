@@ -1,6 +1,7 @@
 const TAU = 6.2831853072;
 
 override FFTSIZE: u32 = 1024;
+override HEIGHT: u32 = FFTSIZE / 2;
 
 alias comp_colors = mat2x3f;
 
@@ -55,7 +56,7 @@ override IMG_HEIGHT = 256;
 
 @group(0) @binding(0) var tex_in: texture_2d<f32>;
 @group(0) @binding(1) var tex_in_samp: sampler;
-@group(0) @binding(2) var tex_out: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(2) var<storage, read_write> spectra_out: array<vec3f>;
 
 fn get_tex_in(col: u32, row: u32) -> vec3f {
     let u = (f32(col) + 0.5) / f32(FFTSIZE);
@@ -63,8 +64,7 @@ fn get_tex_in(col: u32, row: u32) -> vec3f {
     return textureSampleLevel(tex_in, tex_in_samp, vec2f(u, v), 0.0).xyz;
 }
 
-
-@compute @workgroup_size(FFTSIZE / 2, 1, 1) fn horiz_fht(@builtin(workgroup_id) wg_id: vec3u, @builtin(local_invocation_id) local_id: vec3u) {
+@compute @workgroup_size(FFTSIZE / 2, 1, 1) fn horiz_fht_tex_to_buf(@builtin(workgroup_id) wg_id: vec3u, @builtin(local_invocation_id) local_id: vec3u) {
     let row = 2 * wg_id.x;
     let col = 2 * local_id.x;
 
@@ -86,12 +86,42 @@ fn get_tex_in(col: u32, row: u32) -> vec3f {
         hj = 0.5 * (comp_smul(vec2f(1, 1), fj) + comp_smul(vec2f(1, -1), fi));
     }
     
+    spectra_out[i * HEIGHT + row] = hi[0];
+    spectra_out[i * HEIGHT + row + 1] = hi[1];
+    spectra_out[j * HEIGHT + row] = hj[0];
+    spectra_out[j * HEIGHT + row + 1] = hj[1];
+}
 
+@group(0) @binding(0) var<storage, read> spectra_in: array<vec3f>;
+@group(0) @binding(1) var tex_out: texture_storage_2d<rgba16float, write>;
 
-    textureStore(tex_out, vec2u(i, row), vec4f(hi[0], 1));
-    textureStore(tex_out, vec2u(i, row+1), vec4f(hi[1], 1));
-    textureStore(tex_out, vec2u(j, row), vec4f(hj[0], 1));
-    textureStore(tex_out, vec2u(j, row+1), vec4f(hj[1], 1));
+@compute @workgroup_size(FFTSIZE / 2, 1, 1) fn horiz_fht_buf_to_tex(@builtin(workgroup_id) wg_id: vec3u, @builtin(local_invocation_id) local_id: vec3u) {
+    let row = 2 * wg_id.x;
+    let col = 2 * local_id.x;
+    let colptr = col * HEIGHT;
+
+    fft_buf[col] = mat2x3f(spectra_in[colptr + row], spectra_in[colptr + row + 1]);
+    fft_buf[col+1] = mat2x3f(spectra_in[colptr + HEIGHT + row], spectra_in[colptr + HEIGHT + row + 1]);
+    
+    workgroupBarrier();
+    do_fft(local_id.x, false);
+    
+    // extract two Hartley transforms from FFT
+    let i = local_id.x;
+    let j = select(FFTSIZE - i, FFTSIZE / 2, i == 0);
+    let fi = fft_buf[i];
+    let fj = fft_buf[j];
+    var hi = fi;
+    var hj = fj;
+    if i != 0 {
+        hi = 0.5 * (comp_smul(vec2f(1, 1), fi) + comp_smul(vec2f(1, -1), fj));
+        hj = 0.5 * (comp_smul(vec2f(1, 1), fj) + comp_smul(vec2f(1, -1), fi));
+    }
+    
+    textureStore(tex_out, vec2u(i, row), vec4f(hi[0] / 512, 1));
+    textureStore(tex_out, vec2u(i, row+1), vec4f(hi[1] / 512, 1));
+    textureStore(tex_out, vec2u(j, row), vec4f(hj[0] / 512, 1));
+    textureStore(tex_out, vec2u(j, row+1), vec4f(hj[1] / 512, 1));
 }
 
 struct FQOut {
@@ -110,6 +140,6 @@ struct FQOut {
 
 @fragment fn display_tex(v: FQOut) -> @location(0) vec4f {
     let raw = textureSampleLevel(tex_in, tex_in_samp, v.uv, 0.0).xyz;
-    let col = abs(raw) / 512;
+    let col = abs(raw) / 2;
     return vec4f(col, 1);
 }
