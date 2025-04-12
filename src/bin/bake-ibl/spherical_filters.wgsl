@@ -1,4 +1,5 @@
 const TAU = 6.2831853072;
+const PI  = 3.1415926535;
 
 override FFTSIZE: u32 = 1024;
 override HEIGHT: u32 = FFTSIZE / 2;
@@ -86,10 +87,11 @@ fn get_tex_in(col: u32, row: u32) -> vec3f {
         hj = 0.5 * (comp_smul(vec2f(1, 1), fj) + comp_smul(vec2f(1, -1), fi));
     }
     
-    spectra_out[i * HEIGHT + row] = hi[0];
-    spectra_out[i * HEIGHT + row + 1] = hi[1];
-    spectra_out[j * HEIGHT + row] = hj[0];
-    spectra_out[j * HEIGHT + row + 1] = hj[1];
+    let norm: f32 = 1.0 / f32(FFTSIZE);
+    spectra_out[i * HEIGHT + row] = hi[0] * norm;
+    spectra_out[i * HEIGHT + row + 1] = hi[1] * norm;
+    spectra_out[j * HEIGHT + row] = hj[0] * norm;
+    spectra_out[j * HEIGHT + row + 1] = hj[1] * norm;
 }
 
 @group(0) @binding(0) var<storage, read> spectra_in: array<vec3f>;
@@ -118,11 +120,137 @@ fn get_tex_in(col: u32, row: u32) -> vec3f {
         hj = 0.5 * (comp_smul(vec2f(1, 1), fj) + comp_smul(vec2f(1, -1), fi));
     }
     
-    textureStore(tex_out, vec2u(i, row), vec4f(hi[0] / 512, 1));
-    textureStore(tex_out, vec2u(i, row+1), vec4f(hi[1] / 512, 1));
-    textureStore(tex_out, vec2u(j, row), vec4f(hj[0] / 512, 1));
-    textureStore(tex_out, vec2u(j, row+1), vec4f(hj[1] / 512, 1));
+    textureStore(tex_out, vec2u(i, row), vec4f(hi[0], 1));
+    textureStore(tex_out, vec2u(i, row+1), vec4f(hi[1], 1));
+    textureStore(tex_out, vec2u(j, row), vec4f(hj[0] , 1));
+    textureStore(tex_out, vec2u(j, row+1), vec4f(hj[1], 1));
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+var<workgroup> sg_counter: atomic<u32>;
+var<workgroup> sg_counter_result: u32;
+
+fn enumerate_subgroups(sg_inv: u32) -> u32 {
+    var sgid = 0u;
+    if sg_inv == 0 {
+        sgid = atomicAdd(&sg_counter, 1u);
+    }
+    return subgroupBroadcastFirst(sgid);
+}
+
+override MAX_SG = HEIGHT / 32;
+var<workgroup> sum_buffer: array<vec3f, MAX_SG>;
+var<workgroup> sum_result: vec3f;
+
+fn workgroupAdd(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: vec3f) -> vec3f {
+    let warp_sum = subgroupAdd(val);
+    if sg_inv == 0 {
+        sum_buffer[sg_id] = warp_sum;
+    }
+    workgroupBarrier();
+    var subtotal = vec3f(0);
+    if sg_id == 0 {
+        if sg_inv < num_subgroups {
+            subtotal = sum_buffer[sg_inv];
+        }
+        let total = subgroupAdd(subtotal);
+        if sg_inv == 0 {
+            sum_result = total;
+        }
+    }
+    return workgroupUniformLoad(&sum_result);
+}
+
+fn workgroupMul(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: f32) -> f32 {
+    let warp_sum = subgroupMul(val);
+    if sg_inv == 0 {
+        sum_buffer[sg_id] = vec3f(warp_sum, 0, 0);
+    }
+    workgroupBarrier();
+    var subtotal = 1.0;
+    if sg_id == 0 {
+        if sg_inv < num_subgroups {
+            subtotal = sum_buffer[sg_inv].x;
+        }
+        let total = subgroupMul(subtotal);
+        if sg_inv == 0 {
+            sum_result = vec3f(total, 0, 0);
+        }
+    }
+    return workgroupUniformLoad(&sum_result).x;
+}
+
+@group(0) @binding(0) var<storage, read_write> fhts_buf: array<vec3f>;
+override BANDWIDTH: u32 = 512;
+
+var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
+
+@compute @workgroup_size(HEIGHT, 1, 1) fn blur_spectra(
+    @builtin(workgroup_id) wg_id: vec3u,
+    @builtin(local_invocation_id) local_id: vec3u,
+    @builtin(subgroup_size) sg_size: u32,
+    @builtin(subgroup_invocation_id) sg_inv: u32
+) {
+    let sg_id = enumerate_subgroups(sg_inv);
+    workgroupBarrier();
+    if sg_id == 0 && sg_inv == 0 {
+        sg_counter_result = atomicLoad(&sg_counter);
+    }
+    let num_subgroups: u32 = workgroupUniformLoad(&sg_counter_result);
+
+    let n: u32 = (wg_id.x + 1) / 2;
+    let col = select(n, FFTSIZE - n, (wg_id.x & 1u) != 0);
+    let row = local_id.x;
+    let buf_idx = col * HEIGHT + local_id.x;
+    let px_in = fhts_buf[buf_idx];
+    var px_out = vec3f(0.0);
+
+    if n < BANDWIDTH {
+        let theta = PI * (f32(row) + 0.5) / f32(HEIGHT);
+        let z = cos(theta);
+        let r = sin(theta);
+        let dw = PI * r / f32(HEIGHT);
+
+        let p_init_fac = select(1.0, sqrt(f32(n+row) / f32(row) / 4), row > 0 && row <= n);
+        let p_init = workgroupMul(sg_id, sg_inv, num_subgroups, p_init_fac);
+
+        if row < BANDWIDTH {
+            let nf = f32(n);
+            let kf = f32(row);
+            let denom = (kf - nf + 1) * (kf + nf + 1);
+            let twv = (2 * kf + 1) / sqrt(denom);
+            let tww = sqrt((kf + nf) * (kf - nf) / denom);
+            twiddles[row] = vec2f(twv, tww);
+        }
+        workgroupBarrier();
+
+        var p = p_init * pow(r, f32(n));
+        var p1 = 0.0;
+        var p2 = 0.0;
+
+        for (var k = n; k < BANDWIDTH; k += 1) {
+            let cap = (p * dw * (2 * f32(k) + 1)) * px_in;
+            let cleancap = max(cap, vec3f(0)) + min(cap, vec3f(0));
+            let coeff = workgroupAdd(sg_id, sg_inv, num_subgroups, cleancap);
+
+            let rad = f32(k) / 64;
+            let blur = exp(- rad * rad);
+            px_out += p * blur * coeff;
+
+            let vw = twiddles[k];
+            p2 = p1;
+            p1 = p;
+            p = vw.x * z * p1 - vw.y * p2; 
+        }
+    }
+
+    workgroupBarrier();
+    fhts_buf[buf_idx] = px_out;
+
+} 
+
+////////////////////////////////////////////////////////////////////////////////
 
 struct FQOut {
     @builtin(position) pos: vec4f,
@@ -140,6 +268,6 @@ struct FQOut {
 
 @fragment fn display_tex(v: FQOut) -> @location(0) vec4f {
     let raw = textureSampleLevel(tex_in, tex_in_samp, v.uv, 0.0).xyz;
-    let col = abs(raw) / 2;
+    let col = abs(raw) / 5;
     return vec4f(col, 1);
 }

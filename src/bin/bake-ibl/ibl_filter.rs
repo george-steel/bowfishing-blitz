@@ -137,7 +137,7 @@ impl IBLFilter {
     }
 
     pub fn do_filtering(&self, gpu: &GPUContext)  {
-        let in_tex = gpu.load_rgbe8_texture("./assets/sky-equirect.rgbe8.png").expect("Failed to load sky");
+        let in_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_1k.rgbe.png").expect("Failed to load sky");
         let in_view = in_tex.create_view(&Default::default());
 
         const BUFFER_SIZE: u64 = 1024*512*4*4;
@@ -217,10 +217,39 @@ impl IBLFilter {
             push_constant_ranges: &[]
         });
         let fht2_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
-            label: Some("fht1_pipeline"),
+            label: Some("fht2_pipeline"),
             layout: Some(&fht2_layout),
             module: &self.bake_shader,
             entry_point: Some("horiz_fht_buf_to_tex"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
+        let blur_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor{
+            label: Some("blur_bg_layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ]
+        });
+        let blur_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
+            label: Some("blur_layout"),
+            bind_group_layouts: &[&blur_bg_layout],
+            push_constant_ranges: &[]
+        });
+        let blur_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
+            label: Some("blur_pipeline"),
+            layout: Some(&blur_layout),
+            module: &self.bake_shader,
+            entry_point: Some("blur_spectra"),
             compilation_options: Default::default(),
             cache: None,
         });
@@ -232,7 +261,7 @@ impl IBLFilter {
             mapped_at_creation: false 
         });
         let fht1_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
-            label: Some("fht_bind"),
+            label: Some("fht1_bind"),
             layout: &fht1_bg_layout,
             entries: &[
                 BindGroupEntry {
@@ -250,7 +279,7 @@ impl IBLFilter {
             ],
         });
         let fht2_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
-            label: Some("fht_bind"),
+            label: Some("fht2_bind"),
             layout: &fht2_bg_layout,
             entries: &[
                 BindGroupEntry {
@@ -260,6 +289,16 @@ impl IBLFilter {
                 BindGroupEntry {
                     binding: 1,
                     resource: BindingResource::TextureView(&self.filtered_view),
+                },
+            ],
+        });
+        let blur_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
+            label: Some("blur_bind"),
+            layout: &blur_bg_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: hspec_buf.as_entire_binding(),
                 },
             ],
         });
@@ -274,6 +313,12 @@ impl IBLFilter {
             pass.set_pipeline(&fht1_pipeline);
             pass.set_bind_group(0, &fht1_bind, &[]);
             pass.dispatch_workgroups(256, 1, 1);
+        }
+        {
+            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("blur_pass"), timestamp_writes: None });
+            pass.set_pipeline(&blur_pipeline);
+            pass.set_bind_group(0, &blur_bind, &[]);
+            pass.dispatch_workgroups(1024, 1, 1);
         }
         {
             let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("dht_pass"), timestamp_writes: None });
