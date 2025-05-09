@@ -21,7 +21,10 @@ fn main() {
 
     let wgpu_inst = wgpu::Instance::default();
     let event_loop = EventLoop::new().unwrap();
-    let window = event_loop.create_window(Window::default_attributes()).unwrap();
+    let window = event_loop.create_window(
+        Window::default_attributes()
+        .with_inner_size(winit::dpi::LogicalSize::new(1024.0, 512.0)))
+        .unwrap();
     let surface = wgpu_inst.create_surface(&window).unwrap();
     
     let gpu = pollster::block_on(GPUContext::with_limits(

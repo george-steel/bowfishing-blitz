@@ -210,7 +210,7 @@ var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
         let theta = PI * (f32(row) + 0.5) / f32(HEIGHT);
         let z = cos(theta);
         let r = sin(theta);
-        let dw = PI * r / f32(HEIGHT);
+        let dw = PI * r / f32(HEIGHT) / 2;
 
         let p_init_fac = select(1.0, sqrt(f32(n+row) / f32(row) / 4), row > 0 && row <= n);
         let p_init = workgroupMul(sg_id, sg_inv, num_subgroups, p_init_fac);
@@ -268,6 +268,6 @@ struct FQOut {
 
 @fragment fn display_tex(v: FQOut) -> @location(0) vec4f {
     let raw = textureSampleLevel(tex_in, tex_in_samp, v.uv, 0.0).xyz;
-    let col = abs(raw) / 5;
+    let col = raw / 2;
     return vec4f(col, 1);
 }
