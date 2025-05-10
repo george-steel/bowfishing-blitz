@@ -58,7 +58,7 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     let clip_pos = vec4f(clip_xy * clip_w, camera.clip_near, clip_w);
     let world_pos = (camera.inv_matrix * clip_pos).xyz;
 
-    let normal = 2 * textureLoad(normal_buf, px, 0).xyz - 1;
+    let normal = normalize(2 * textureLoad(normal_buf, px, 0).xyz - 1);
     var color: vec3f;
     if material == MAT_WATER {
         let look_dir = normalize(world_pos - camera.eye);
@@ -129,7 +129,7 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     let virt_pos = (camera.inv_matrix * clip_pos).xyz;
     let world_pos = vec3f(virt_pos.xy, -virt_pos.z);
 
-    let normal = 2 * textureLoad(normal_buf, px, 0).xyz - 1;
+    let normal = normalize(2 * textureLoad(normal_buf, px, 0).xyz - 1);
     var color: vec3f;
 
     let albedo = textureLoad(albedo_buf, px, 0).xyz;
@@ -163,7 +163,6 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     // recover world position using snell's law
     let look_dir_above = normalize(virt_pos - camera.eye);
     let look_dir_below = normalize(refract(look_dir_above, vec3f(0.0, 0.0, 1.0), 0.75));
-    let dist_below = virt_pos.z / (virt_pos.z - camera.eye.z);
     let depth_adj = (look_dir_below.z / look_dir_above.z) * (length(look_dir_above.xy) / length(look_dir_below.xy));
     let world_pos = vec3f(virt_pos.xy, depth_adj * virt_pos.z);
 
@@ -178,7 +177,7 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         color = albedo;
     } else {
         let ao = textureLoad(ao_buf, px, 0).x;
-        let normal = 2 * textureLoad(normal_buf, px, 0).xyz - 1;
+        let normal = normalize(2 * textureLoad(normal_buf, px, 0).xyz - 1);
         let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
         let ambient = amb_falloff * ao * amb_color;
 

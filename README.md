@@ -145,38 +145,43 @@ pow(world_depth / virt_depth, 2) == (pow(ior, 2) - 1) * pow(horiz_dist / (cam_he
 which we can solve to find `virt_depth`. 
 
 Since the analytic solution to this quartic equation is extremely messy, to find `virt_depth` in shader code,
-we approximate a solution numerically.
-Since our equation above is already in the form of a convergent fixed point,
-we can use iterated evaluation starting from a crude initial estimate to approximate the solution.
-Defining `depth_ratio = world_depth / virt depth` and letting `ior = 1.33` (water's index of refraction) gives us the following function:
+we approximate a solution numerically using Newton's method,
+which converges in 4 iterations for points within 500 times the camera height (tested with `bin/test-refract`).
+Letting `ior = 1.33` (water's index of refraction) gives us the following function:
 
 ```wgsl
-fn virtual_depth(horiz_dist: f32, cam_height: f32, world_depth: f32) -> f32 {
-    // Initial estimate found by fitting a simple curve in Desmos
-    let x = horiz_dist / (world_depth + 3 * cam_height);
-    let init_ratio = 1.33 * (x * x + 1);
+fn apparent_depth(dist: f32, eye_height: f32, world_depth: f32) -> f32 {
+    let d = abs(world_depth);
+    let h = eye_height;
+    let x = dist;
 
-    // Iterate the refraction equation to converge on the fixed point
-    // 4 iterations gets close enough to the true value to look extremely convincing
-    var depth_ratio: f32 = init_ratio; 
-    var oblique = horiz_dist / (abs(world_depth) / depth_ratio  + cam_height);
-    depth_ratio = sqrt(0.77 * oblique * oblique + 1.77);
-    oblique = horiz_dist / (abs(world_depth) / depth_ratio + cam_height);
-    depth_ratio = sqrt(0.77 * oblique * oblique + 1.77);
-    oblique = horiz_dist / (abs(world_depth) / depth_ratio + cam_height);
-    depth_ratio = sqrt(0.77 * oblique * oblique + 1.77);
-    oblique = horiz_dist / (abs(world_depth) / depth_ratio + cam_height);
-    depth_ratio = sqrt(0.77 * oblique * oblique + 1.77);
-
-    // return 
-    return depth / ratio;
+    // starting point in correct bucket
+    let oi = dist / (d * 0.01 + eye_height);
+    var ratio: f32 = sqrt(0.777 * oi * oi + 1.777);
+    // use newton's method to find apparant depth ratio
+    for (var i = 0; i < 4; i++) {
+        let q = ratio;
+        let od = d + q * h;
+        let o = q * x / od;
+        let Do = x * d / od / od;
+        let r = sqrt(0.777 * o * o + 1.777);
+        let Dr = 0.777 * o * Do / r;
+        ratio = q - (r - q) / (Dr - 1);
+    }
+    return world_depth / ratio;
 }
 
-fn refracted_virt_pos(world_pos: vec3f, water_height: f32) -> vec3f {
-    // camera is a uniform
-    let cam_dist = length(world_pos.xy - camera.world_pos.xy);
-    let virt_depth = virtual_depth(cam_dist, camera.world_pos.z - water_height, world_pos.z - water_height);
-    return vec3f(world_pos.xy, water_height + virt_depth);
+fn clip_point(world_pos: vec3f) -> vec4f {
+    var z = world_pos.z;
+    if PATH_ID == PATH_REFLECT {
+        z = -z;
+    } else if PATH_ID == PATH_REFRACT {
+        let cam_dist = length(world_pos.xy - camera.eye.xy);
+        z = apparent_depth(cam_dist, camera.eye.z, world_pos.z);
+    }
+
+    let virt_pos = vec4f(world_pos.xy, z, 1.0);
+    return camera.matrix * virt_pos;
 }
 ```
 
@@ -188,10 +193,17 @@ then discarding the above-water part of the triangle in the fragment shader.
 In order to perform deferred lighting calculations for a refracted image,
 we need to recover the world-space position of each fragment, along with the optical path direction where it meets the fragment.
 We start with the usual technique of passing the pixel position and depth-buffer value through the inverted camera matrix,
-recovering the virtual position of the point.
-While it would be possible to calculate the fragment's world-space position using a single iteration of the virtual depth equation above,
-this game uses the simpler technique of storing the ratio between world-space and virtual depths in a gbuffer
-(which also prevents the propagation of numerical error in calculating the virtual position).
+recovering the virtual position of the point and the direction the path leaves the camera.
+We can then use Snell's Law to recover the direction where the path meets the point,
+then use those two directions of to find the point's worldspace depth.
+
+```wgsl
+let virt_pos = (camera.inv_matrix * clip_pos).xyz;
+let look_dir_above = normalize(virt_pos - camera.eye);
+let look_dir_below = normalize(refract(look_dir_above, vec3f(0.0, 0.0, 1.0), 0.75));
+let depth_adj = (look_dir_below.z / look_dir_above.z) * (length(look_dir_above.xy) / length(look_dir_below.xy));
+let world_pos = vec3f(virt_pos.xy, depth_adj * virt_pos.z);
+```
 
 By using the techniques above and applying some simple lighting, we end up with a refracted image of underwater geometry
 (note how further-away objects appear flatter as the angle of incidence becomes shallower).
@@ -241,6 +253,7 @@ We can then apply the camera matrix to this point,
 taking the xy coordinates to get a point on the underwater image to sample.
 For small ripples, this tends to be quite close to water's pixel,
 minimizing the chance of going off-screen.
+
 ```wgsl
 let refr_point_virt = water_world_pos + uw_dist_planar * refr__dir_virt; // simple parallax mapping
 let refr_point_clip = camera.matrix * vec4f(refr_point_virt, 1.0);
@@ -249,8 +262,9 @@ let refr_point_uv = vec2f(0.5, -0.5) * (refr_clip.xy / refr_clip.w) + 0.5;
 let trans_color = textureSampleLevel(water_image_buf, water_sampler, refr_point_uv, 0.0).xyz;
 ```
 
-Combining this transmitted colour with the reflected colour (in this case, sampled from a skybox)
-using a Fresnel factor gives us the fragment's final colour as seen by the camera.
+Combining this transmitted colour with the reflected colour
+(also rendered using a virtual space method, then distorted simillarly to the refracted image)
+according to a Fresnel factor gives us the fragment's final colour as seen by the camera.
 Using the same capture as the underwater image above, this gives us the following final frame.
 
 ![rendered image with ripples](./doc/rippled-img.jpg)

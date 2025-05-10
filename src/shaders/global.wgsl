@@ -38,8 +38,8 @@ struct GBufferPoint {
 
 // planar refraction of underwater geometry.
 // alters the depth of vertices to their virtual images.
-fn apparent_depth(dist: f32, eye_height: f32, depth: f32) -> f32 {
-    let d = abs(depth);
+fn apparent_depth(dist: f32, eye_height: f32, world_depth: f32) -> f32 {
+    let d = abs(world_depth);
     let h = eye_height;
     let x = dist;
 
@@ -56,7 +56,7 @@ fn apparent_depth(dist: f32, eye_height: f32, depth: f32) -> f32 {
         let Dr = 0.777 * o * Do / r;
         ratio = q - (r - q) / (Dr - 1);
     }
-    return depth / ratio;
+    return world_depth / ratio;
 }
 
 fn refracted_z(world_pos: vec3f) -> f32 {
