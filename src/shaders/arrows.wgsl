@@ -25,9 +25,8 @@ struct ArrowVSOut {
     let right = -normalize(cross(vec3f(0.0, 0.0, 1.0), arr.dir));
     let up = normalize(cross(right, arr.dir));
 
-    let width = clamp(sqrt(length(arr.end_pos - camera.eye) / 8), 1.0, 3.0);
-
     // includes stretch and squash for visibility
+    let width = clamp(sqrt(length(arr.end_pos - camera.eye) / 8), 1.0, 3.0);
     let pos_mat = mat3x3f(width * right, arr.len * normalize(arr.dir), width * up);
     let norm_mat = mat3x3f(right, normalize(arr.dir), up);
 
@@ -40,6 +39,20 @@ struct ArrowVSOut {
     out.world_norm = world_norm;
     out.uv = vert.uv;
     return out;
+}
+
+@vertex fn arrow_vert_shadow(vert: ArrowVSIn, @builtin(instance_index) inst: u32) -> @builtin(position) vec4f {
+    let arr = arrows[inst];
+    let right = -normalize(cross(vec3f(0.0, 0.0, 1.0), arr.dir));
+    let up = normalize(cross(right, arr.dir));
+
+    // includes stretch and squash for visibility
+    let width = clamp(sqrt(length(arr.end_pos - camera.eye) / 8), 1.0, 3.0);
+    let pos_mat = mat3x3f(width * right, arr.len * normalize(arr.dir), width * up);
+
+    let world_pos = arr.end_pos + pos_mat * vert.pos;
+
+    return shadow_clip_point(world_pos);
 }
 
 @fragment fn arrow_frag(v: ArrowVSOut, @builtin(front_facing) is_forward: bool) -> GBufferPoint {

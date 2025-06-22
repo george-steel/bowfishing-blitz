@@ -105,6 +105,55 @@ var<private> QUAD_V: array<u32, 6> = array(0, 1, 0, 0, 1, 1);
     return out;
 }
 
+@vertex fn pot_vert_shadow(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> @builtin(position) vec4f {
+    let ring_idx = vert_idx / (6 * POT_U_DIVS);
+    let quad_idx = (vert_idx / 6) % (POT_U_DIVS);
+    let quad_corner = vert_idx % 6;
+
+    // solid of rotation
+    let phi: f32 = f32(quad_idx) + QUAD_U[quad_corner] + 0.5 * f32(ring_idx % 2);
+    let u = phi / f32(POT_U_DIVS);
+    let rho = vec2f(cos(TAU * u), sin(TAU * u));
+    let ring_offset = QUAD_V[quad_corner];
+    let point = pot_model[ring_idx + ring_offset];
+    
+    var local_pos = vec3f(rho * point.pos_rz.x, point.pos_rz.y);
+    var local_tan = vec3f(-rho.y, rho.x, 0.0);
+
+    let pot = pots[inst_idx];
+
+    var explode_progress:f32 = 0;
+    if pot.time_hit > 0 {
+        let explode_time = saturate((camera.time - pot.time_hit) / EXPLODE_TIME);
+        explode_progress = (2.0 - explode_time) * explode_time;
+        let sink_progress = smoothstep(0.0, 1.0, (camera.time - pot.time_hit) / SINK_TIME);
+
+        let tri_idx = (vert_idx / 3) % (2 * POT_U_DIVS);
+        let tri_u = f32(tri_idx + (ring_idx % 2)) / f32(2 * POT_U_DIVS);
+        let tri_rho = vec2f(cos(TAU * tri_u), sin(TAU * tri_u));
+        let tri_point = pot_model[ring_idx + (quad_corner / 3)];
+        let anchor_pos = vec3f(tri_rho * tri_point.pos_rz.x, tri_point.pos_rz.y);
+        let corner_delta = local_pos - anchor_pos;
+
+        let noise = pcg3d_snorm(vec3i(vec3u(ring_idx, tri_idx, pot.seed)));
+        let explode_delta = explode_progress * (vec3f(tri_rho * tri_point.pos_rz.x, 1.0) + 0.5 * noise);
+        let exploded_pos = anchor_pos + explode_delta;
+
+        let shard_rot = normalize(vec4f(0.3 * explode_progress * noise.z * local_tan, 1.0));
+
+        let world_down = quat_rotate(pot.rotate * vec4f(1, 1, 1, -1), vec3f(0, 0, -1));
+        let world_down_adj = mix(1.0, -1/world_down.z, 0.7);
+        let down = mix(vec3f(0, 0, -1), world_down * world_down_adj, 0.6);
+        let sink_delta = 0.9 * sink_progress * exploded_pos.z * down;
+        let sunk_pos = exploded_pos + sink_delta;
+        local_pos = sunk_pos + quat_rotate(shard_rot, corner_delta);
+    }
+
+    let world_pos = quat_rotate(pot.rotate, local_pos) + pot.base_point;
+    
+    return shadow_clip_point(world_pos);
+}
+
 @group(1) @binding(2) var tex_sampler: sampler;
 @group(1) @binding(3) var pot_co_tex: texture_2d<f32>;
 @group(1) @binding(4) var pot_nr_tex: texture_2d<f32>;

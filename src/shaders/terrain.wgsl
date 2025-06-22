@@ -18,8 +18,7 @@ struct TerrainParams {
 struct TerrainVertexOut {
     @builtin(position) clip_pos: vec4f,
     @location(0) world_pos: vec3f,
-    @location(1) refract_pos: vec3f,
-    @location(2) uv: vec2f,
+    @location(1) uv: vec2f,
 }
 
 @group(1) @binding(0) var<uniform> tparams: TerrainParams;
@@ -35,10 +34,19 @@ struct TerrainVertexOut {
 
     var out: TerrainVertexOut;
     out.clip_pos = clip_point(world_pos);
-    out.refract_pos = world_pos.xyz;
     out.world_pos = world_pos.xyz;
     out.uv = uv;
     return out;
+}
+
+@vertex fn terrain_mesh_shadow(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> @builtin(position) vec4f {
+    let ij = vec2i(vec2u(inst_idx + (vert_idx % 2), vert_idx / 2));
+    let uv = vec2f(0.0, 1.0) + vec2f(1.0, -1.0) * vec2f(ij) / f32(tparams.grid_size);
+    let xy = tparams.radius * (2 * vec2f(ij) / f32(tparams.grid_size) - 1);
+    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_height_sampler, uv, 0.0).x;
+    let world_pos = vec3f(xy, z);
+
+    return shadow_clip_point(world_pos);
 }
 
 const grass_col = vec3f(0.26406, 0.46721, 0.12113);

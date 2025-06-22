@@ -118,6 +118,7 @@ pub struct ArrowController {
     arrows_pipeline: RenderPipeline,
     arrows_refr_pipeline: RenderPipeline,
     arrows_refl_pipeline: RenderPipeline,
+    shadow_arrows_pipeline: RenderPipeline,
     arrows_model: Box<[ArrowVert]>,
     arrows_vertex_buf: Buffer,
     arrows_buf: Buffer,
@@ -213,6 +214,28 @@ impl ArrowController {
         let arrows_refr_pipeline = DeferredRenderer::create_refracted_pipeline(&gpu.device, &arrows_above_pipeline_desc);
         let arrows_refl_pipeline = DeferredRenderer::create_reflected_pipeline(&gpu.device, &arrows_above_pipeline_desc);
 
+        let shadow_arrows_pipeline_desc = RenderPipelineDescriptor {
+            label: Some("arrows"),
+            layout: Some(&arrows_pipeline_layout),
+            vertex: VertexState {
+                module: &shaders,
+                entry_point: Some("arrow_vert_shadow"),
+                compilation_options: Default::default(),
+                buffers: &[arrows_vertex_layout.clone()],
+            },
+            fragment: None,
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleStrip,
+                //cull_mode: Some(wgpu::Face::Back),
+                ..PrimitiveState::default()
+            },
+            depth_stencil: reverse_z(),
+            multisample: MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        };
+        let shadow_arrows_pipeline = gpu.device.create_render_pipeline(&shadow_arrows_pipeline_desc);
+
         let arrows_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("arrows_buf"),
             size: (size_of::<Arrow>() * (MAX_DEAD_ARROWS + MAX_LIVE_ARROWS)) as u64,
@@ -300,7 +323,7 @@ impl ArrowController {
 
         let dead_arrows = bytemuck::zeroed_slice_box(MAX_DEAD_ARROWS);
         ArrowController {
-            arrows_pipeline, arrows_refr_pipeline, arrows_refl_pipeline,
+            arrows_pipeline, arrows_refr_pipeline, arrows_refl_pipeline, shadow_arrows_pipeline,
             arrows_model, arrows_vertex_buf, arrows_buf, arrows_bg,
             release_sounds, splish_sounds, thunk_sounds,
             max_arrow_inst: 0,
@@ -455,6 +478,15 @@ impl RenderObject for ArrowController {
         self.max_splish_inst = visible_splishes.len() as u32;
         if self.max_splish_inst != 0 {
             gpu.queue.write_buffer(&self.splish_buf, 0, bytemuck::cast_slice(&visible_splishes));
+        }
+    }
+
+    fn draw_shadow_casters<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {
+        if self.max_arrow_inst != 0  {
+            pass.set_pipeline(&self.shadow_arrows_pipeline);
+            pass.set_vertex_buffer(0, self.arrows_vertex_buf.slice(..));
+            pass.set_bind_group(1, &self.arrows_bg, &[]);
+            pass.draw(0..(self.arrows_model.len() as u32), 0..self.max_arrow_inst);
         }
     }
 

@@ -14,6 +14,10 @@ struct Camera {
     clip_near: f32,
     fb_size: vec2f,
     water_fb_size: vec2f,
+    shadow_skew: vec2f,
+    shadow_range_xy: f32,
+    shadow_range_z: f32,
+    shadow_depth_corr: f32,
     time: f32,
 }
 
@@ -75,6 +79,24 @@ fn clip_point(world_pos: vec3f) -> vec4f {
 
     let virt_pos = vec4f(world_pos.xy, z, 1.0);
     return camera.matrix * virt_pos;
+}
+
+fn shadow_clip_point(world_pos: vec3f) -> vec4f {
+    let virt_z = select(1.0, camera.shadow_depth_corr, world_pos.z < 0.0) * world_pos.z;
+    let virt_xy = camera.shadow_skew * virt_z + world_pos.xy;
+    let clip_z = (virt_z / camera.shadow_range_z) * 0.5 + 0.5;
+    let clip_xy = virt_xy / camera.shadow_range_xy;
+
+    return vec4f(clip_xy, clip_z, 1.0);
+}
+
+fn shadow_map_point(world_pos: vec3f) -> vec3f {
+    let virt_z = select(1.0, camera.shadow_depth_corr, world_pos.z < 0.0) * world_pos.z;
+    let virt_xy = camera.shadow_skew * virt_z + world_pos.xy;
+    let clip_z = ((virt_z + 0.1) / camera.shadow_range_z) * 0.5 + 0.5;
+    let clip_xy = virt_xy / camera.shadow_range_xy;
+
+    return vec3f(clip_xy, clip_z);
 }
 
 fn guard_frag(world_pos: vec3f) {

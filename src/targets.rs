@@ -113,8 +113,10 @@ pub struct TargetController {
     targets_pipeline: RenderPipeline,
     targets_refr_pipeline: RenderPipeline,
     targets_refl_pipeline: RenderPipeline,
+    shadow_targets_pipeline: RenderPipeline,
     targets_buf: Buffer,
     targets_bg: BindGroup,
+    shadow_targets_bg: BindGroup,
     smash_sounds: SoundAtlas,
     max_target_inst: u32,
 
@@ -202,11 +204,37 @@ impl TargetController {
             ]
         });
 
+        let shadow_targets_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: Some("pots_bg_layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer { ty: BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::VERTEX,
+                    ty: BindingType::Buffer { ty: BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+            ]
+        });
+
         let targets_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("pots_pipeline_layout"),
             bind_group_layouts: &[
                 &renderer.global_bind_layout,
                 &targets_bg_layout,
+            ],
+            push_constant_ranges: &[],
+        });
+        let shadow_targets_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("pots_pipeline_layout"),
+            bind_group_layouts: &[
+                &renderer.global_bind_layout,
+                &shadow_targets_bg_layout,
             ],
             push_constant_ranges: &[],
         });
@@ -247,6 +275,28 @@ impl TargetController {
         let targets_refr_pipeline = DeferredRenderer::create_refracted_pipeline(&gpu.device, &targets_pipeline_desc);
         let targets_refl_pipeline = DeferredRenderer::create_reflected_pipeline(&gpu.device, &targets_pipeline_desc);
 
+        let shadow_targets_pipeline_desc = RenderPipelineDescriptor {
+            label: Some("pots_above"),
+            layout: Some(&shadow_targets_pipeline_layout),
+            vertex: VertexState {
+                module: &shaders,
+                entry_point: Some("pot_vert_shadow"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: None,
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::TriangleList,
+                cull_mode: None,
+                ..PrimitiveState::default()
+            },
+            depth_stencil: reverse_z(),
+            multisample: MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        };
+        let shadow_targets_pipeline = gpu.device.create_render_pipeline(&shadow_targets_pipeline_desc);
+
         let targets_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("pots_buf"),
             size: (size_of::<Target>() * NUM_TARGETS) as u64,
@@ -278,13 +328,21 @@ impl TargetController {
                 BindGroupEntry {binding: 4, resource: BindingResource::TextureView(&pot_nr_tex.create_view(&Default::default()))},
             ]
         });
+        let shadow_targets_bg = gpu.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("pots_bg"),
+            layout: &shadow_targets_bg_layout,
+            entries: &[
+                BindGroupEntry {binding: 0, resource: targets_buf.as_entire_binding()},
+                BindGroupEntry {binding: 1, resource: target_lathe_buf.as_entire_binding()},
+            ]
+        });
 
         let smash_sounds = SoundAtlas::load_with_starts("./assets/glass_smash.ogg", -3.0,
             &[0.0, 1.57, 2.84, 4.02, 5.43, 6.98, 8.38, 9.68, 10.97, 12.32, 13.58, 15.30, 16.73, 18.12]).unwrap();
 
         TargetController {
-            targets_pipeline, targets_refr_pipeline, targets_refl_pipeline,
-            targets_buf, targets_bg,
+            targets_pipeline, targets_refr_pipeline, targets_refl_pipeline, shadow_targets_pipeline,
+            targets_buf, targets_bg, shadow_targets_bg,
             smash_sounds,
             max_target_inst: 0,
 
@@ -318,6 +376,14 @@ impl RenderObject for TargetController {
         self.max_target_inst = visible_targets.len() as u32;
         if self.max_target_inst != 0 {
             gpu.queue.write_buffer(&self.targets_buf, 0, bytemuck::cast_slice(&visible_targets));
+        }
+    }
+
+    fn draw_shadow_casters<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {
+        if self.max_target_inst != 0 {
+            pass.set_pipeline(&self.shadow_targets_pipeline);
+            pass.set_bind_group(1, &self.shadow_targets_bg, &[]);
+            pass.draw(0..NUM_POT_VERTS, 0..self.max_target_inst);
         }
     }
 

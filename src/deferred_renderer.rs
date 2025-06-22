@@ -4,13 +4,14 @@ use glam::*;
 use wgpu::*;
 use wgpu::util::*;
 use std::collections::HashMap;
+use std::f32;
 use std::{borrow::Cow, path::Path};
 
 pub trait RenderObject {
     // To update biffers or run compute shaders
     fn prepass(&mut self, gpu: &GPUContext, renderer: &DeferredRenderer, encoder: &mut CommandEncoder) {}
 
-    //fn draw_shadow_casters(&self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass, shadow_camera: &Camera) {}
+    fn draw_shadow_casters<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {}
 
     // Draw underwater geometry to its refracted positions.
     fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {}
@@ -77,6 +78,7 @@ struct DeferredRendererTextures {
     ao_view: TextureView,
     material: Texture,
     material_view: TextureView,
+
     // reflected
     water_refl: Texture,
     water_refl_view: TextureView,
@@ -92,6 +94,7 @@ struct DeferredRendererTextures {
     water_refl_ao_view: TextureView,
     water_refl_material: Texture,
     water_refl_material_view: TextureView,
+
     // refracted
     water_trans: Texture,
     water_trans_view: TextureView,
@@ -107,6 +110,10 @@ struct DeferredRendererTextures {
     water_trans_ao_view: TextureView,
     water_trans_material: Texture,
     water_trans_material_view: TextureView,
+
+    // shadow
+    shadow_dist: Texture,
+    shadow_dist_view: TextureView,
 }
 
 impl DeferredRendererTextures {
@@ -126,6 +133,7 @@ impl DeferredRendererTextures {
         self.water_trans_rough_metal.destroy();
         self.water_trans_ao.destroy();
         self.water_trans_material.destroy();
+        self.shadow_dist.destroy();
     }
 
     fn create(gpu: &GPUContext, output_size: UVec2) -> Self {
@@ -156,6 +164,7 @@ impl DeferredRendererTextures {
         let (water_trans_rough_metal, water_trans_rm_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg8Unorm, "water-trans-rough-metal");
         let (water_trans_ao, water_trans_ao_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Unorm, "water-trans-ao");
         let (water_trans_material, water_trans_material_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Uint, "water-trans-material");
+        let (shadow_dist, shadow_dist_view) = gpu.create_empty_texture(extent_2d(uvec2(2000, 2000)), TextureFormat::Depth32Float, "shadow_dist");
 
         Self {
             size, water_size,
@@ -179,6 +188,7 @@ impl DeferredRendererTextures {
             water_trans_rough_metal, water_trans_rm_view,
             water_trans_ao, water_trans_ao_view,
             water_trans_material, water_trans_material_view,
+            shadow_dist, shadow_dist_view,
         }
     }
 }
@@ -190,6 +200,7 @@ pub struct DeferredRenderer {
     pub global_bind_group: BindGroup,
     pub main_camera_buf: Buffer,
     pub camera: Camera,
+    pub global_lighting: GlobalLighting,
 
     gbuffer_bind_layout: BindGroupLayout,
     gbuffer_bind_group: BindGroup,
@@ -544,6 +555,7 @@ impl DeferredRenderer {
             gbuffers,
             global_bind_layout, global_bind_group,
             main_camera_buf, camera,
+            global_lighting,
 
             gbuffer_bind_layout, gbuffer_bind_group, water_sampler,
             water_gbuffer_bind_layout, water_trans_gbuffer_bind_group, water_refl_gbuffer_bind_group,
@@ -611,7 +623,25 @@ impl DeferredRenderer {
         for obj in scene.iter_mut() {
             obj.prepass(gpu, &self, &mut command_encoder);
         }
+        {
+            let mut shadow_pass = command_encoder.begin_render_pass(&RenderPassDescriptor{
+                label: Some("shadow-pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &self.gbuffers.shadow_dist_view,
+                    depth_ops: Some(Operations {load: LoadOp::Clear(0.0), store: StoreOp::Store}),
+                    stencil_ops: None
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
+            shadow_pass.set_bind_group(0, &self.global_bind_group, &[]);
+
+            for obj in scene.iter() {
+                obj.draw_shadow_casters(gpu, &self, &mut shadow_pass);
+            }
+        }
         {
             let mut underwater_pass = command_encoder.begin_render_pass(&RenderPassDescriptor{
                 label: Some("refracted-opaque-pass"),

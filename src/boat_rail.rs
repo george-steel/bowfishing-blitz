@@ -1,7 +1,7 @@
 use glam::*;
 use std::{f32::consts::TAU, ops::{Add, Mul, Sub}, time::Instant};
 
-use crate::{camera::{Camera, CameraController}, ui::GameState};
+use crate::{camera::{Camera, CameraController, ShadowSettings}, ui::GameState};
 
 // use the compiler to parse static csv
 const RAIL_CSV: &[f32] = &include!("rail-path.csv");
@@ -51,6 +51,7 @@ fn rail_points() -> LoopedRail<Vec2> {
 }
 
 pub struct RailController {
+    shadow_settings: ShadowSettings,
     rail: LoopedRail<Vec2>,
     period: f64,
     pub current_time: f64,
@@ -75,14 +76,23 @@ impl CameraController for RailController {
         if mat.determinant() == 0.0 {
             panic!("Singular camera matrix: {:?}", mat);
         }
+
+        let shadow_skew = self.shadow_settings.sun_dir.xy() / self.shadow_settings.sun_dir.z;
+        let sin_above = self.shadow_settings.sun_dir.normalize().xy().length();
+        let shadow_depth_corr = (1.0 - sin_above * sin_above / 1.7689).sqrt() / 1.33;
+        
         Camera {
             matrix: mat,
             inv_matrix: mat.inverse(),
             eye: eye,
             clip_near: CLIP_NEAR,
             fb_size, water_fb_size,
+            shadow_skew,
+            shadow_range_xy: self.shadow_settings.range_xy,
+            shadow_range_z: self.shadow_settings.range_z,
+            shadow_depth_corr,
             time_s: self.current_time as f32,
-            pad: Vec3::ZERO,
+            pad: Vec2::ZERO,
         }
     }
 
@@ -109,11 +119,12 @@ impl CameraController for RailController {
 }
 
 impl RailController {
-    pub fn new(now: Instant) -> Self {
+    pub fn new(shadow_settings: ShadowSettings, now: Instant) -> Self {
         let rail = rail_points();
         log::info!("path has {} points", rail.points.len());
 
         RailController {
+            shadow_settings,
             rail,
             period: GameState::GAME_PERIOD,
             pitch: 0.0,
