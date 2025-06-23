@@ -126,6 +126,11 @@ impl DeferredRendererTextures {
         self.material.destroy();
         self.water_refl.destroy();
         self.water_refl_dist.destroy();
+        self.water_refl_albedo.destroy();
+        self.water_refl_normal.destroy();
+        self.water_refl_rough_metal.destroy();
+        self.water_refl_ao.destroy();
+        self.water_refl_material.destroy();
         self.water_trans.destroy();
         self.water_trans_dist.destroy();
         self.water_trans_albedo.destroy();
