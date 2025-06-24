@@ -30,7 +30,7 @@ fn main() {
     let gpu = pollster::block_on(GPUContext::with_default_limits(
         wgpu_inst,
         Some(&surface),
-        wgpu::Features::RG11B10UFLOAT_RENDERABLE | wgpu::Features::DEPTH_CLIP_CONTROL,
+        wgpu::Features::RG11B10UFLOAT_RENDERABLE,
     ));
     
     let mut size = window_size(&window);

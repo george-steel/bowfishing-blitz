@@ -87,9 +87,10 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     // positive is more rocky
     let bias = perlin_noise_deriv(xy, mat2x2f(0.3, 0, 0, 0.3), 20);
 
-    let grass_uv = (xy + 1.5 * bias.xy) / 4;
-    let dirt_uv = (xy + 0.2 * bias.yx) / 3;
-    let rock_uv = (xy - 1.2 * bias.xy) / 8;
+    let base_uv = xy * vec2f(1.0, -1.0);
+    let grass_uv = (base_uv + 1.5 * bias.xy) / 4;
+    let dirt_uv = (base_uv + 0.2 * bias.yx) / 3;
+    let rock_uv = (base_uv - 1.2 * bias.xy) / 8;
     // splat textures
     let grass_co = textureSample(grass_co_tex, tex_sampler, grass_uv);
     let grass_nr = textureSample(grass_nr_tex, tex_sampler, grass_uv);

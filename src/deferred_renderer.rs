@@ -210,6 +210,7 @@ pub struct DeferredRenderer {
     gbuffer_bind_layout: BindGroupLayout,
     gbuffer_bind_group: BindGroup,
     water_sampler: Sampler,
+    shadow_sampler: Sampler,
     water_gbuffer_bind_layout: BindGroupLayout,
     water_trans_gbuffer_bind_group: BindGroup,
     water_refl_gbuffer_bind_group: BindGroup,
@@ -289,31 +290,50 @@ impl DeferredRenderer {
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 6, // underwater color
-                    ty: BindingType::Texture { sample_type: TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::D2, multisampled: false },
-                    visibility: ShaderStages::FRAGMENT, count: None,
-                },
-                BindGroupLayoutEntry{
-                    binding: 7, // underwater distance
+                    binding: 6, // shadow map
                     ty: BindingType::Texture { sample_type: TextureSampleType::Depth, view_dimension: TextureViewDimension::D2, multisampled: false },
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 8, // reflected color
+                    binding: 7, // bilinear for water transmission
+                    ty: BindingType::Sampler(SamplerBindingType::Comparison),
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 8, // underwater color
                     ty: BindingType::Texture { sample_type: TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::D2, multisampled: false },
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 9, // reflected distance
+                    binding: 9, // underwater distance
                     ty: BindingType::Texture { sample_type: TextureSampleType::Depth, view_dimension: TextureViewDimension::D2, multisampled: false },
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 10, // bilinear for water transmission
+                    binding: 10, // reflected color
+                    ty: BindingType::Texture { sample_type: TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::D2, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 11, // reflected distance
+                    ty: BindingType::Texture { sample_type: TextureSampleType::Depth, view_dimension: TextureViewDimension::D2, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 12, // shadow map
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
             ]
+        });
+        let shadow_sampler = gpu.device.create_sampler(&SamplerDescriptor {
+            label: Some("shadow_sampler"),
+            compare: Some(CompareFunction::Greater),
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            ..Default::default()
         });
         let water_sampler = gpu.device.create_sampler(&SamplerDescriptor {
             label: Some("water_sampler"),
@@ -333,11 +353,13 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&gbuffers.rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&gbuffers.ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&gbuffers.material_view)},
-                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_view)},
-                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_dist_view)},
-                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_view)},
-                BindGroupEntry {binding: 9, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_dist_view)},
-                BindGroupEntry {binding: 10, resource: wgpu::BindingResource::Sampler(&water_sampler)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&shadow_sampler)},
+                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_view)},
+                BindGroupEntry {binding: 9, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_dist_view)},
+                BindGroupEntry {binding: 10, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_view)},
+                BindGroupEntry {binding: 11, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_dist_view)},
+                BindGroupEntry {binding: 12, resource: wgpu::BindingResource::Sampler(&water_sampler)},
             ]
         });
 
@@ -374,6 +396,16 @@ impl DeferredRenderer {
                     ty: BindingType::Texture { sample_type: TextureSampleType::Uint, view_dimension: TextureViewDimension::D2, multisampled: false },
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
+                BindGroupLayoutEntry{
+                    binding: 6, // shadow map
+                    ty: BindingType::Texture { sample_type: TextureSampleType::Depth, view_dimension: TextureViewDimension::D2, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 7, // shadow map sampler
+                    ty: BindingType::Sampler(SamplerBindingType::Comparison),
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
             ]
         });
 
@@ -387,6 +419,8 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_material_view)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&shadow_sampler)},
             ]
         });
 
@@ -400,6 +434,8 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_material_view)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&shadow_sampler)},
             ]
         });
 
@@ -562,7 +598,7 @@ impl DeferredRenderer {
             main_camera_buf, camera,
             global_lighting,
 
-            gbuffer_bind_layout, gbuffer_bind_group, water_sampler,
+            gbuffer_bind_layout, gbuffer_bind_group, water_sampler, shadow_sampler,
             water_gbuffer_bind_layout, water_trans_gbuffer_bind_group, water_refl_gbuffer_bind_group,
             lighting_bind_group,
             lighting_pipeline, underwater_lighting_pipeline, reflected_lighting_pipeline,
@@ -584,11 +620,13 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&self.gbuffers.rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&self.gbuffers.ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&self.gbuffers.material_view)},
-                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_view)},
-                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_dist_view)},
-                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_view)},
-                BindGroupEntry {binding: 9, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_dist_view)},
-                BindGroupEntry {binding: 10, resource: wgpu::BindingResource::Sampler(&self.water_sampler)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&self.gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&self.shadow_sampler)},
+                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_view)},
+                BindGroupEntry {binding: 9, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_dist_view)},
+                BindGroupEntry {binding: 10, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_view)},
+                BindGroupEntry {binding: 11, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_dist_view)},
+                BindGroupEntry {binding: 12, resource: wgpu::BindingResource::Sampler(&self.water_sampler)},
             ]
         });
 
@@ -602,6 +640,8 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_material_view)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&self.gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&self.shadow_sampler)},
             ]
         });
 
@@ -615,6 +655,8 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_material_view)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&self.gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&self.shadow_sampler)},
             ]
         });
     }

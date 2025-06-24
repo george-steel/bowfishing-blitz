@@ -78,8 +78,11 @@ impl CameraController for RailController {
         }
 
         let shadow_skew = self.shadow_settings.sun_dir.xy() / self.shadow_settings.sun_dir.z;
-        let sin_above = self.shadow_settings.sun_dir.normalize().xy().length();
-        let shadow_depth_corr = (1.0 - sin_above * sin_above / 1.7689).sqrt() / 1.33;
+        let norm_sun = self.shadow_settings.sun_dir.normalize();
+        let sin_above = norm_sun.xy().length();
+        let cos_below = (1.0 - sin_above * sin_above / 1.7689).sqrt();
+        let refr_sun_dir = vec3(norm_sun.x/1.33, norm_sun.y/1.33, cos_below);
+        let shadow_depth_corr = (norm_sun.z * refr_sun_dir.xy().length()) / (refr_sun_dir.z * norm_sun.xy().length());
         
         Camera {
             matrix: mat,

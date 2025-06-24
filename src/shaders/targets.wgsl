@@ -173,18 +173,19 @@ var<private> QUAD_V: array<u32, 6> = array(0, 1, 0, 0, 1, 1);
 
     let co = textureSample(pot_co_tex, tex_sampler, uv);
     let nr = textureSample(pot_nr_tex, tex_sampler, uv);
-    var albedo = col_mat * co.xyz;
+    let albedo = col_mat * co.xyz;
     let frag_norm = norm_mat * normalize(2 * nr.xyz - 1);
 
+    var ao = co.w;
     if !is_forward {
-        albedo *= mix(1.0, mix(0.2, 1.0, v.explode_progress), smoothstep(0.25, 0.35, v.uv.x));
+        ao *= mix(1.0, mix(0.2, 1.0, v.explode_progress), smoothstep(0.25, 0.35, v.uv.x));
     }
 
     var out: GBufferPoint;
     out.albedo = vec4f(albedo, 1.0);
     out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
     out.rough_metal = vec2f(nr.w, 0.0);
-    out.occlusion = co.w;
+    out.occlusion = ao;
     out.mat_type = MAT_SOLID;
     return out;
 }

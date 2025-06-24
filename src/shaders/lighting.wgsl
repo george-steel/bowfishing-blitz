@@ -34,13 +34,14 @@ fn get_sky(look_dir: vec3f) -> vec3f {
 @group(1) @binding(3) var rm_buf: texture_2d<f32>;
 @group(1) @binding(4) var ao_buf: texture_2d<f32>;
 @group(1) @binding(5) var material_buf: texture_2d<u32>;
+@group(1) @binding(6) var shadow_buf: texture_depth_2d;
+@group(1) @binding(7) var shadow_sampler: sampler_comparison;
 
-@group(1) @binding(6) var trans_buf: texture_2d<f32>;
-@group(1) @binding(7) var trans_dist_buf: texture_depth_2d;
-@group(1) @binding(8) var refl_buf: texture_2d<f32>;
-@group(1) @binding(9) var refl_dist_buf: texture_depth_2d;
-@group(1) @binding(10) var water_sampler: sampler;
-@group(1) @binding(11) var water_int_sampler: sampler;
+@group(1) @binding(8) var trans_buf: texture_2d<f32>;
+@group(1) @binding(9) var trans_dist_buf: texture_depth_2d;
+@group(1) @binding(10) var refl_buf: texture_2d<f32>;
+@group(1) @binding(11) var refl_dist_buf: texture_depth_2d;
+@group(1) @binding(12) var water_sampler: sampler;
 
 @fragment fn do_global_lighting(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let px = vec2i(floor(pos.xy));
@@ -103,8 +104,10 @@ fn get_sky(look_dir: vec3f) -> vec3f {
             let ao = textureLoad(ao_buf, px, 0).x;
             let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
             let ambient = ao * amb_color;
+            let shadow_point = shadow_map_point(world_pos);
+            let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
             let lambert = max(0.0, dot(normal, sun.sun_dir));
-            let direct = sun.sun_color * lambert * mix(ao, 1.0, lambert);
+            let direct = sun.sun_color * lambert * shadow_fac * mix(ao, 1.0, lambert);
             color = albedo * (ambient + direct);
         }
     }
@@ -139,8 +142,10 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         let ao = textureLoad(ao_buf, px, 0).x;
         let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
         let ambient = ao * amb_color;
+        let shadow_point = shadow_map_point(world_pos);
+        let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
         let lambert = max(0.0, dot(normal, sun.sun_dir));
-        let direct = sun.sun_color * lambert * mix(ao, 1.0, lambert);
+        let direct = sun.sun_color * lambert * shadow_fac * mix(ao, 1.0, lambert);
         color = albedo * (ambient + direct);
     }
 
@@ -181,8 +186,10 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
         let ambient = amb_falloff * ao * amb_color;
 
+        let shadow_point = shadow_map_point(world_pos);
+        let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
         let lambert = max(0.0, dot(normal, sun.refr_sun_dir));
-        let direct = sun_falloff * sun.refr_sun_trans * sun.sun_color * lambert * mix(ao, 1.0, lambert);
+        let direct = sun_falloff * sun.refr_sun_trans * sun.sun_color * lambert * shadow_fac * mix(ao, 1.0, lambert);
         color = albedo * (ambient + direct);
     }
     return vec4f(mix(sun.water_lim_color, color, look_falloff), 1);
