@@ -93,11 +93,11 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     let rock_uv = (base_uv - 1.2 * bias.xy) / 8;
     // splat textures
     let grass_co = textureSample(grass_co_tex, tex_sampler, grass_uv);
-    let grass_nr = textureSample(grass_nr_tex, tex_sampler, grass_uv);
+    let grass_nr = textureSample(grass_nr_tex, tex_sampler, grass_uv);// * vec4f(1.0, 1.0, 1.0, 1.5); // quick fix for bad roughness values due to incorrect scaling
     let dirt_co = textureSample(dirt_co_tex, tex_sampler, dirt_uv);
     let dirt_nr = textureSample(dirt_nr_tex, tex_sampler, dirt_uv);
     let rock_co = textureSample(rock_co_tex, tex_sampler, rock_uv);
-    let rock_nr = textureSample(rock_nr_tex, tex_sampler, rock_uv);
+    let rock_nr = textureSample(rock_nr_tex, tex_sampler, rock_uv) * vec4f(1.0, 1.0, 1.0, 1.1); // rock was a bit too shiny
 
     let rock_fac = smoothstep(0.2, 0.8, length(norm.xy) + 0.2 * bias.z);
     let grass_fac = smoothstep(-0.3, 0.6, z - 0.1 * bias.z);
@@ -107,6 +107,7 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     params.co = mix(mix(dirt_co, grass_co, grass_fac), rock_co, rock_fac);
     //params.co = select(vec4f(1, 0, 0, 1), vec4f(0, 1, 0, 1), checker == 0.0);
     params.nr = mix(mix(dirt_nr, grass_nr, grass_fac), rock_nr, rock_fac);
+
     return params;
 }
 
@@ -124,14 +125,19 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     let params = terrain_tex(v.world_pos.xy, z, norm);
 
     let albedo = params.co.xyz;
-    let frag_norm = norm_mat * (2 * params.nr.xyz - 1);
+    let tan_norm = 2 * params.nr.xyz - 1;
+    let frag_norm = norm_mat * tan_norm;
+
+    // correction for naive normal downscaling and mipmapping
+    // see https://developer.download.nvidia.com/whitepapers/2006/Mipmapping_Normal_Maps.pdf
+    let rough = mix(1.0, params.nr.w, length(tan_norm));
 
     var out: GBufferPoint;
     //out.albedo = vec4f(0.5 + 0.5 * bias.z, 0.5 - 0.5 * bias.z, 0.0, 1.0);
     out.albedo = vec4f(albedo, 1.0);
     out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
     out.occlusion = params.co.w;
-    out.rough_metal = vec2f(params.nr.w, 0.02);
+    out.rough_metal = vec2f(rough, 0.0);
     out.mat_type = MAT_SOLID;
     return out;
 }

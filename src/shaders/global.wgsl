@@ -1,5 +1,5 @@
 const PI  = 3.1415926535;
-const TAU = 6.2821853072;
+const TAU = 6.2831853072;
 
 const PATH_DIRECT: u32 = 0;
 const PATH_REFRACT: u32 = 1;

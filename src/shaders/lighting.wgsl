@@ -6,6 +6,42 @@
     return vec4f(xy, 1, 1);
 }
 
+// adapted from Learn OpenGL
+fn dist_GGX(normal: vec3f, half: vec3f, rough: f32) -> f32 {
+    let alpha = rough * rough;
+    let a2 = alpha * alpha;
+    let nh = max(0.0, dot(normal, half));
+    let nh2 = nh * nh;
+    let denom = nh2 * (a2 - 1.0) + 1.0;
+    return a2 / (denom * denom);
+}
+
+fn shad_GGX(nv: f32, rough: f32) -> f32{
+    let r = rough + 1.0;
+    let k = r * r / 8.0;
+    return nv / mix(nv, 1.0, k);
+}
+
+fn direct_specular_illumination(to_eye: vec3f, to_light: vec3f, normal: vec3f, rough: f32, metal: f32, albedo: vec3f, F0: f32) -> vec4f {
+    let h = normalize(to_eye + to_light);
+    let vh = dot(to_eye, h);
+    let nv = max(0.0, dot(to_eye, normal));
+    let nl = max(0.0, dot(to_light, normal));
+    let shlick = pow(clamp(1.0 - vh, 0.0, 1.0), 5.0);
+    let kS = mix(mix(vec3f(F0), albedo, metal), vec3f(1.0), shlick);
+    let kD = mix(mix(1.0 - F0, 0.0, metal), 0.0, shlick);
+
+    let ndf = dist_GGX(normal, h, rough);
+    let shad = shad_GGX(nv, rough) * shad_GGX(nl, rough);
+    let spec_fac = ndf * shad / ((4.0 * nv) + 0.0001);
+    return vec4f(spec_fac * kS, kD);
+}
+
+fn direct_diffuse_illumination(to_light: vec3f, normal: vec3f, albedo: vec3f) -> vec3f {
+    let nl = max(0.0, dot(to_light, normal));
+    return albedo * nl;
+}
+
 struct GlobalLighting {
     upper_ambient_color: vec3f,
     lower_ambient_color: vec3f,
@@ -98,17 +134,26 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         color = mix(trans, refl, fresnel);
     } else {
         let albedo = textureLoad(albedo_buf, px, 0).xyz;
+        let rm_val = textureLoad(rm_buf, px, 0).xy;
+        let rough = rm_val.x;
+        let metal = select(0.0, rm_val.y, material == MAT_SOLID); 
         if material == MAT_EMIT {
             color = albedo;
         } else {
+            let to_eye = normalize(camera.eye - world_pos);
             let ao = textureLoad(ao_buf, px, 0).x;
             let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
-            let ambient = ao * amb_color;
+            let ambient = albedo * ao * amb_color;
+
+            let to_light = sun.sun_dir;
             let shadow_point = shadow_map_point(world_pos);
             let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
-            let lambert = max(0.0, dot(normal, sun.sun_dir));
-            let direct = sun.sun_color * lambert * shadow_fac * mix(ao, 1.0, lambert);
-            color = albedo * (ambient + direct);
+            let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, 0.04);
+            let direct_diff = direct_diffuse_illumination(to_light, normal, albedo);
+            let direct_irradiance = shadow_fac * sun.sun_color;
+            let direct = direct_irradiance * (direct_spec.xyz + direct_diff * direct_spec.w);
+
+            color = ambient + direct;
         }
     }
     return vec4f(color, 1.0);
@@ -133,20 +178,31 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     let world_pos = vec3f(virt_pos.xy, -virt_pos.z);
 
     let normal = normalize(2 * textureLoad(normal_buf, px, 0).xyz - 1);
-    var color: vec3f;
-
     let albedo = textureLoad(albedo_buf, px, 0).xyz;
+    let rm_val = textureLoad(rm_buf, px, 0).xy;
+    let rough = rm_val.x;
+    let metal = select(0.0, rm_val.y, material == MAT_SOLID); 
+
+    var color: vec3f;
     if material == MAT_EMIT {
         color = albedo;
     } else {
+        let virt_to_eye = normalize(camera.eye - virt_pos);
+        let to_eye = vec3f(virt_to_eye.xy, -virt_to_eye.z);
+
         let ao = textureLoad(ao_buf, px, 0).x;
         let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
-        let ambient = ao * amb_color;
+        let ambient = albedo * ao * amb_color;
+
+        let to_light = sun.sun_dir;
         let shadow_point = shadow_map_point(world_pos);
         let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
-        let lambert = max(0.0, dot(normal, sun.sun_dir));
-        let direct = sun.sun_color * lambert * shadow_fac * mix(ao, 1.0, lambert);
-        color = albedo * (ambient + direct);
+        let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, 0.04);
+        let direct_diff = direct_diffuse_illumination(to_light, normal, albedo);
+        let direct_irradiance = shadow_fac * sun.sun_color;
+        let direct = direct_irradiance * (direct_spec.xyz + direct_diff * direct_spec.w);
+
+        color = ambient + direct;
     }
 
     return vec4f(color, 1.0);
@@ -175,22 +231,30 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     let sun_falloff = exp(world_pos.z / (sun.refr_sun_dir.z * sun.half_secci));
     let look_falloff = exp(world_pos.z / (-look_dir_below.z * sun.half_secci));
 
+    let normal = normalize(2 * textureLoad(normal_buf, px, 0).xyz - 1);
     let albedo = textureLoad(albedo_buf, px, 0).xyz;
+    let rm_val = textureLoad(rm_buf, px, 0).xy;
+    let rough = rm_val.x;
+    let metal = select(0.0, rm_val.y, material == MAT_SOLID); 
 
     var color: vec3f;
     if material == MAT_EMIT {
         color = albedo;
     } else {
+        let to_eye = -look_dir_below;
         let ao = textureLoad(ao_buf, px, 0).x;
-        let normal = normalize(2 * textureLoad(normal_buf, px, 0).xyz - 1);
         let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
-        let ambient = amb_falloff * ao * amb_color;
+        let ambient = albedo * amb_falloff * ao * amb_color;
 
+        let to_light = sun.refr_sun_dir;
         let shadow_point = shadow_map_point(world_pos);
         let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
-        let lambert = max(0.0, dot(normal, sun.refr_sun_dir));
-        let direct = sun_falloff * sun.refr_sun_trans * sun.sun_color * lambert * shadow_fac * mix(ao, 1.0, lambert);
-        color = albedo * (ambient + direct);
+        let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, 0.01);
+        let direct_diff = direct_diffuse_illumination(to_light, normal, albedo);
+        let direct_irradiance = shadow_fac * sun_falloff * sun.refr_sun_trans * sun.sun_color;
+        let direct = direct_irradiance * (direct_spec.xyz + direct_diff * direct_spec.w);
+
+        color = ambient + direct;
     }
     return vec4f(mix(sun.water_lim_color, color, look_falloff), 1);
 }

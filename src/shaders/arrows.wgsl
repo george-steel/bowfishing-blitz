@@ -62,7 +62,7 @@ struct ArrowVSOut {
 
     var albedo: vec4f;
     if v.uv.x < 0.25 {
-        albedo = vec4f(0.3, 0.3, 0.3, 1.0);
+        albedo = vec4f(0.6, 0.6, 0.6, 1.0);
     } else if v.uv.x > 0.75 {
         albedo = vec4f(1.0, 0.1, 0.0, 1.0);
     } else {
@@ -72,7 +72,7 @@ struct ArrowVSOut {
     var out: GBufferPoint;
     out.albedo = albedo;
     out.normal = vec4f(0.5 * (norm + 1), 1.0);
-    out.rough_metal = select(vec2f(0.05, 1.0), vec2f(0.5, 0.02), v.uv.x > 0.25);
+    out.rough_metal = select(vec2f(0.05, 1.0), vec2f(0.5, 0.0), v.uv.x > 0.25);
     out.occlusion = 1.0;
     out.mat_type = select(MAT_SOLID, MAT_EMIT, v.uv.x > 0.75);
     return out;
