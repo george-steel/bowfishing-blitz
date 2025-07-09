@@ -22,7 +22,7 @@ fn shad_GGX(nv: f32, rough: f32) -> f32{
     return nv / mix(nv, 1.0, k);
 }
 
-fn direct_specular_illumination(to_eye: vec3f, to_light: vec3f, normal: vec3f, rough: f32, metal: f32, albedo: vec3f, F0: f32) -> vec4f {
+fn direct_specular_illumination(to_eye: vec3f, to_light: vec3f, normal: vec3f, rough: f32, metal: f32, albedo: vec3f, ao: f32, F0: f32) -> vec4f {
     let h = normalize(to_eye + to_light);
     let vh = dot(to_eye, h);
     let nv = max(0.0, dot(to_eye, normal));
@@ -32,14 +32,14 @@ fn direct_specular_illumination(to_eye: vec3f, to_light: vec3f, normal: vec3f, r
     let kD = mix(mix(1.0 - F0, 0.0, metal), 0.0, shlick);
 
     let ndf = dist_GGX(normal, h, rough);
-    let shad = shad_GGX(nv, rough) * shad_GGX(nl, rough);
+    let shad = shad_GGX(nv, rough) * shad_GGX(nl, rough) * mix(ao, 1.0, nl);
     let spec_fac = ndf * shad / ((4.0 * nv) + 0.0001);
     return vec4f(spec_fac * kS, kD);
 }
 
-fn direct_diffuse_illumination(to_light: vec3f, normal: vec3f, albedo: vec3f) -> vec3f {
+fn direct_diffuse_illumination(to_light: vec3f, normal: vec3f, albedo: vec3f, ao: f32) -> vec3f {
     let nl = max(0.0, dot(to_light, normal));
-    return albedo * nl;
+    return albedo * nl * mix(ao, 1.0, nl);
 }
 
 struct GlobalLighting {
@@ -148,8 +148,8 @@ fn get_sky(look_dir: vec3f) -> vec3f {
             let to_light = sun.sun_dir;
             let shadow_point = shadow_map_point(world_pos);
             let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
-            let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, 0.04);
-            let direct_diff = direct_diffuse_illumination(to_light, normal, albedo);
+            let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, ao, 0.04);
+            let direct_diff = direct_diffuse_illumination(to_light, normal, albedo, ao);
             let direct_irradiance = shadow_fac * sun.sun_color;
             let direct = direct_irradiance * (direct_spec.xyz + direct_diff * direct_spec.w);
 
@@ -197,8 +197,8 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         let to_light = sun.sun_dir;
         let shadow_point = shadow_map_point(world_pos);
         let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
-        let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, 0.04);
-        let direct_diff = direct_diffuse_illumination(to_light, normal, albedo);
+        let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, ao, 0.04);
+        let direct_diff = direct_diffuse_illumination(to_light, normal, albedo, ao);
         let direct_irradiance = shadow_fac * sun.sun_color;
         let direct = direct_irradiance * (direct_spec.xyz + direct_diff * direct_spec.w);
 
@@ -212,7 +212,7 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     let px = vec2i(floor(pos.xy));
     let material = textureLoad(material_buf, px, 0).x;
     if material == MAT_SKY {
-        return vec4f(0.5, 0.5, 0.75, 1.0);
+        return sun.water_lim_color;
     }
 
     let clip_xy = ((pos.xy / camera.water_fb_size) - 0.5)  * vec2f(2, -2);
@@ -249,8 +249,8 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         let to_light = sun.refr_sun_dir;
         let shadow_point = shadow_map_point(world_pos);
         let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
-        let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, 0.01);
-        let direct_diff = direct_diffuse_illumination(to_light, normal, albedo);
+        let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, ao, 0.01);
+        let direct_diff = direct_diffuse_illumination(to_light, normal, albedo, ao);
         let direct_irradiance = shadow_fac * sun_falloff * sun.refr_sun_trans * sun.sun_color;
         let direct = direct_irradiance * (direct_spec.xyz + direct_diff * direct_spec.w);
 

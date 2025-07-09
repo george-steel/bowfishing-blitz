@@ -93,7 +93,7 @@ fn shadow_clip_point(world_pos: vec3f) -> vec4f {
 fn shadow_map_point(world_pos: vec3f) -> vec3f {
     let virt_z = select(1.0, camera.shadow_depth_corr, world_pos.z < 0.0) * world_pos.z;
     let virt_xy = world_pos.xy - camera.shadow_skew * virt_z;
-    let clip_z = ((virt_z + 0.05) / camera.shadow_range_z) * 0.5 + 0.5;
+    let clip_z = ((virt_z + 0.1) / camera.shadow_range_z) * 0.5 + 0.5;
     let clip_xy = virt_xy / camera.shadow_range_xy;
     let map_uv = clip_xy * vec2f(0.5, -0.5) + 0.5;
 

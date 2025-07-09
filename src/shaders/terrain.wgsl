@@ -93,11 +93,11 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     let rock_uv = (base_uv - 1.2 * bias.xy) / 8;
     // splat textures
     let grass_co = textureSample(grass_co_tex, tex_sampler, grass_uv);
-    let grass_nr = textureSample(grass_nr_tex, tex_sampler, grass_uv);// * vec4f(1.0, 1.0, 1.0, 1.5); // quick fix for bad roughness values due to incorrect scaling
+    let grass_nr = textureSample(grass_nr_tex, tex_sampler, grass_uv);
     let dirt_co = textureSample(dirt_co_tex, tex_sampler, dirt_uv);
     let dirt_nr = textureSample(dirt_nr_tex, tex_sampler, dirt_uv);
     let rock_co = textureSample(rock_co_tex, tex_sampler, rock_uv);
-    let rock_nr = textureSample(rock_nr_tex, tex_sampler, rock_uv) * vec4f(1.0, 1.0, 1.0, 1.1); // rock was a bit too shiny
+    let rock_nr = textureSample(rock_nr_tex, tex_sampler, rock_uv);
 
     let rock_fac = smoothstep(0.2, 0.8, length(norm.xy) + 0.2 * bias.z);
     let grass_fac = smoothstep(-0.3, 0.6, z - 0.1 * bias.z);
@@ -130,7 +130,11 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
 
     // correction for naive normal downscaling and mipmapping
     // see https://developer.download.nvidia.com/whitepapers/2006/Mipmapping_Normal_Maps.pdf
-    let rough = mix(1.0, params.nr.w, length(tan_norm));
+    var rough = mix(1.0, params.nr.w, length(tan_norm));
+
+    if PATH_ID != PATH_REFRACT {
+        rough *= 0.5 + 0.5 * smoothstep(0.02, 0.15, v.world_pos.z);
+    }
 
     var out: GBufferPoint;
     //out.albedo = vec4f(0.5 + 0.5 * bias.z, 0.5 - 0.5 * bias.z, 0.0, 1.0);

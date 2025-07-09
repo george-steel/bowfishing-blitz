@@ -181,10 +181,15 @@ var<private> QUAD_V: array<u32, 6> = array(0, 1, 0, 0, 1, 1);
         ao *= mix(1.0, mix(0.2, 1.0, v.explode_progress), smoothstep(0.25, 0.35, v.uv.x));
     }
 
+    var rough = nr.w;
+    if PATH_ID != PATH_REFRACT {
+        rough *= 0.5 + 0.5 * smoothstep(0.02, 0.1, v.world_pos.z);
+    }
+
     var out: GBufferPoint;
     out.albedo = vec4f(albedo, 1.0);
     out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
-    out.rough_metal = vec2f(nr.w, 0.0);
+    out.rough_metal = vec2f(rough, 0.0);
     out.occlusion = ao;
     out.mat_type = MAT_SOLID;
     return out;
