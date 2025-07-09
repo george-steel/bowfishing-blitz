@@ -42,8 +42,13 @@ fn main() {
     let init_time = Instant::now();
     let mut game_state = GameState::Title {started_at: init_time, is_restart: false };
 
+    let shadow_settings = ShadowSettings {
+        sun_dir: vec3(0.548, -0.380, 0.745),
+        range_xy: 60.0,
+        range_z: 10.0,
+    };
 
-    let mut camera = RailController::new(init_time);
+    let mut camera = RailController::new(shadow_settings, init_time);
     let mut renderer = DeferredRenderer::new(&gpu, &camera, size);
 
     let terrain = terrain_view::HeightmapTerrain::load();

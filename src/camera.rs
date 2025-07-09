@@ -13,8 +13,12 @@ pub struct Camera {
     pub clip_near: f32,
     pub fb_size: Vec2,
     pub water_fb_size: Vec2,
+    pub shadow_skew: Vec2,
+    pub shadow_range_xy: f32,
+    pub shadow_range_z: f32,
+    pub shadow_depth_corr: f32,
     pub time_s: f32,
-    pub pad: Vec3,
+    pub pad: Vec2,
 }
 
 impl Camera {
@@ -76,6 +80,13 @@ impl Default for FreeCamSettings {
             clip_near: 0.1,
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct ShadowSettings {
+    pub sun_dir: Vec3,
+    pub range_xy: f32,
+    pub range_z: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -148,6 +159,7 @@ impl CameraInputAccum {
     }
 }
 
+/*
 #[derive(Clone, Debug)]
 pub struct FreeCam {
     pub settings: FreeCamSettings,
@@ -216,7 +228,7 @@ impl CameraController for FreeCam {
             clip_near: self.settings.clip_near,
             fb_size, water_fb_size,
             time_s: (self.updated_at - self.created_at).as_secs_f32(),
-            pad: Vec3::ZERO,
+            pad: 0.0,
         }
     }
 
@@ -230,3 +242,4 @@ impl CameraController for FreeCam {
         Vec3::new(pitch_rad.cos() * yaw_rad.cos(), pitch_rad.cos() * yaw_rad.sin(), pitch_rad.sin())
     }
 }
+*/

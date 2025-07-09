@@ -1,5 +1,5 @@
 const PI  = 3.1415926535;
-const TAU = 6.2821853072;
+const TAU = 6.2831853072;
 
 const PATH_DIRECT: u32 = 0;
 const PATH_REFRACT: u32 = 1;
@@ -14,6 +14,10 @@ struct Camera {
     clip_near: f32,
     fb_size: vec2f,
     water_fb_size: vec2f,
+    shadow_skew: vec2f,
+    shadow_range_xy: f32,
+    shadow_range_z: f32,
+    shadow_depth_corr: f32,
     time: f32,
 }
 
@@ -38,8 +42,8 @@ struct GBufferPoint {
 
 // planar refraction of underwater geometry.
 // alters the depth of vertices to their virtual images.
-fn apparent_depth(dist: f32, eye_height: f32, depth: f32) -> f32 {
-    let d = abs(depth);
+fn apparent_depth(dist: f32, eye_height: f32, world_depth: f32) -> f32 {
+    let d = abs(world_depth);
     let h = eye_height;
     let x = dist;
 
@@ -56,7 +60,7 @@ fn apparent_depth(dist: f32, eye_height: f32, depth: f32) -> f32 {
         let Dr = 0.777 * o * Do / r;
         ratio = q - (r - q) / (Dr - 1);
     }
-    return depth / ratio;
+    return world_depth / ratio;
 }
 
 fn refracted_z(world_pos: vec3f) -> f32 {
@@ -75,6 +79,25 @@ fn clip_point(world_pos: vec3f) -> vec4f {
 
     let virt_pos = vec4f(world_pos.xy, z, 1.0);
     return camera.matrix * virt_pos;
+}
+
+fn shadow_clip_point(world_pos: vec3f) -> vec4f {
+    let virt_z = select(1.0, camera.shadow_depth_corr, world_pos.z < 0.0) * world_pos.z;
+    let virt_xy = world_pos.xy - camera.shadow_skew * virt_z;
+    let clip_z = (virt_z / camera.shadow_range_z) * 0.5 + 0.5;
+    let clip_xy = virt_xy / camera.shadow_range_xy;
+
+    return vec4f(clip_xy, clip_z, 1.0);
+}
+
+fn shadow_map_point(world_pos: vec3f) -> vec3f {
+    let virt_z = select(1.0, camera.shadow_depth_corr, world_pos.z < 0.0) * world_pos.z;
+    let virt_xy = world_pos.xy - camera.shadow_skew * virt_z;
+    let clip_z = ((virt_z + 0.1) / camera.shadow_range_z) * 0.5 + 0.5;
+    let clip_xy = virt_xy / camera.shadow_range_xy;
+    let map_uv = clip_xy * vec2f(0.5, -0.5) + 0.5;
+
+    return vec3f(map_uv, clip_z);
 }
 
 fn guard_frag(world_pos: vec3f) {

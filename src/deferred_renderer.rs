@@ -4,13 +4,14 @@ use glam::*;
 use wgpu::*;
 use wgpu::util::*;
 use std::collections::HashMap;
+use std::f32;
 use std::{borrow::Cow, path::Path};
 
 pub trait RenderObject {
     // To update biffers or run compute shaders
     fn prepass(&mut self, gpu: &GPUContext, renderer: &DeferredRenderer, encoder: &mut CommandEncoder) {}
 
-    //fn draw_shadow_casters(&self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass, shadow_camera: &Camera) {}
+    fn draw_shadow_casters<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {}
 
     // Draw underwater geometry to its refracted positions.
     fn draw_underwater<'a>(&'a self, gpu: &GPUContext, renderer: &DeferredRenderer, pass: &mut RenderPass<'a>) {}
@@ -77,6 +78,7 @@ struct DeferredRendererTextures {
     ao_view: TextureView,
     material: Texture,
     material_view: TextureView,
+
     // reflected
     water_refl: Texture,
     water_refl_view: TextureView,
@@ -92,6 +94,7 @@ struct DeferredRendererTextures {
     water_refl_ao_view: TextureView,
     water_refl_material: Texture,
     water_refl_material_view: TextureView,
+
     // refracted
     water_trans: Texture,
     water_trans_view: TextureView,
@@ -107,6 +110,10 @@ struct DeferredRendererTextures {
     water_trans_ao_view: TextureView,
     water_trans_material: Texture,
     water_trans_material_view: TextureView,
+
+    // shadow
+    shadow_dist: Texture,
+    shadow_dist_view: TextureView,
 }
 
 impl DeferredRendererTextures {
@@ -119,6 +126,11 @@ impl DeferredRendererTextures {
         self.material.destroy();
         self.water_refl.destroy();
         self.water_refl_dist.destroy();
+        self.water_refl_albedo.destroy();
+        self.water_refl_normal.destroy();
+        self.water_refl_rough_metal.destroy();
+        self.water_refl_ao.destroy();
+        self.water_refl_material.destroy();
         self.water_trans.destroy();
         self.water_trans_dist.destroy();
         self.water_trans_albedo.destroy();
@@ -126,6 +138,7 @@ impl DeferredRendererTextures {
         self.water_trans_rough_metal.destroy();
         self.water_trans_ao.destroy();
         self.water_trans_material.destroy();
+        self.shadow_dist.destroy();
     }
 
     fn create(gpu: &GPUContext, output_size: UVec2) -> Self {
@@ -156,6 +169,7 @@ impl DeferredRendererTextures {
         let (water_trans_rough_metal, water_trans_rm_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::Rg8Unorm, "water-trans-rough-metal");
         let (water_trans_ao, water_trans_ao_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Unorm, "water-trans-ao");
         let (water_trans_material, water_trans_material_view) = gpu.create_empty_texture(water_size_3d, TextureFormat::R8Uint, "water-trans-material");
+        let (shadow_dist, shadow_dist_view) = gpu.create_empty_texture(extent_2d(uvec2(2000, 2000)), TextureFormat::Depth32Float, "shadow_dist");
 
         Self {
             size, water_size,
@@ -179,6 +193,7 @@ impl DeferredRendererTextures {
             water_trans_rough_metal, water_trans_rm_view,
             water_trans_ao, water_trans_ao_view,
             water_trans_material, water_trans_material_view,
+            shadow_dist, shadow_dist_view,
         }
     }
 }
@@ -190,10 +205,12 @@ pub struct DeferredRenderer {
     pub global_bind_group: BindGroup,
     pub main_camera_buf: Buffer,
     pub camera: Camera,
+    pub global_lighting: GlobalLighting,
 
     gbuffer_bind_layout: BindGroupLayout,
     gbuffer_bind_group: BindGroup,
     water_sampler: Sampler,
+    shadow_sampler: Sampler,
     water_gbuffer_bind_layout: BindGroupLayout,
     water_trans_gbuffer_bind_group: BindGroup,
     water_refl_gbuffer_bind_group: BindGroup,
@@ -273,31 +290,50 @@ impl DeferredRenderer {
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 6, // underwater color
-                    ty: BindingType::Texture { sample_type: TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::D2, multisampled: false },
-                    visibility: ShaderStages::FRAGMENT, count: None,
-                },
-                BindGroupLayoutEntry{
-                    binding: 7, // underwater distance
+                    binding: 6, // shadow map
                     ty: BindingType::Texture { sample_type: TextureSampleType::Depth, view_dimension: TextureViewDimension::D2, multisampled: false },
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 8, // reflected color
+                    binding: 7, // bilinear for water transmission
+                    ty: BindingType::Sampler(SamplerBindingType::Comparison),
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 8, // underwater color
                     ty: BindingType::Texture { sample_type: TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::D2, multisampled: false },
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 9, // reflected distance
+                    binding: 9, // underwater distance
                     ty: BindingType::Texture { sample_type: TextureSampleType::Depth, view_dimension: TextureViewDimension::D2, multisampled: false },
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 10, // bilinear for water transmission
+                    binding: 10, // reflected color
+                    ty: BindingType::Texture { sample_type: TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::D2, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 11, // reflected distance
+                    ty: BindingType::Texture { sample_type: TextureSampleType::Depth, view_dimension: TextureViewDimension::D2, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 12, // shadow map
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
             ]
+        });
+        let shadow_sampler = gpu.device.create_sampler(&SamplerDescriptor {
+            label: Some("shadow_sampler"),
+            compare: Some(CompareFunction::Greater),
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            ..Default::default()
         });
         let water_sampler = gpu.device.create_sampler(&SamplerDescriptor {
             label: Some("water_sampler"),
@@ -317,11 +353,13 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&gbuffers.rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&gbuffers.ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&gbuffers.material_view)},
-                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_view)},
-                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_dist_view)},
-                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_view)},
-                BindGroupEntry {binding: 9, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_dist_view)},
-                BindGroupEntry {binding: 10, resource: wgpu::BindingResource::Sampler(&water_sampler)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&shadow_sampler)},
+                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_view)},
+                BindGroupEntry {binding: 9, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_dist_view)},
+                BindGroupEntry {binding: 10, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_view)},
+                BindGroupEntry {binding: 11, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_dist_view)},
+                BindGroupEntry {binding: 12, resource: wgpu::BindingResource::Sampler(&water_sampler)},
             ]
         });
 
@@ -358,6 +396,16 @@ impl DeferredRenderer {
                     ty: BindingType::Texture { sample_type: TextureSampleType::Uint, view_dimension: TextureViewDimension::D2, multisampled: false },
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
+                BindGroupLayoutEntry{
+                    binding: 6, // shadow map
+                    ty: BindingType::Texture { sample_type: TextureSampleType::Depth, view_dimension: TextureViewDimension::D2, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 7, // shadow map sampler
+                    ty: BindingType::Sampler(SamplerBindingType::Comparison),
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
             ]
         });
 
@@ -371,6 +419,8 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&gbuffers.water_trans_material_view)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&shadow_sampler)},
             ]
         });
 
@@ -384,6 +434,8 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_material_view)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&shadow_sampler)},
             ]
         });
 
@@ -544,8 +596,9 @@ impl DeferredRenderer {
             gbuffers,
             global_bind_layout, global_bind_group,
             main_camera_buf, camera,
+            global_lighting,
 
-            gbuffer_bind_layout, gbuffer_bind_group, water_sampler,
+            gbuffer_bind_layout, gbuffer_bind_group, water_sampler, shadow_sampler,
             water_gbuffer_bind_layout, water_trans_gbuffer_bind_group, water_refl_gbuffer_bind_group,
             lighting_bind_group,
             lighting_pipeline, underwater_lighting_pipeline, reflected_lighting_pipeline,
@@ -567,11 +620,13 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&self.gbuffers.rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&self.gbuffers.ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&self.gbuffers.material_view)},
-                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_view)},
-                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_dist_view)},
-                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_view)},
-                BindGroupEntry {binding: 9, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_dist_view)},
-                BindGroupEntry {binding: 10, resource: wgpu::BindingResource::Sampler(&self.water_sampler)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&self.gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&self.shadow_sampler)},
+                BindGroupEntry {binding: 8, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_view)},
+                BindGroupEntry {binding: 9, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_dist_view)},
+                BindGroupEntry {binding: 10, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_view)},
+                BindGroupEntry {binding: 11, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_dist_view)},
+                BindGroupEntry {binding: 12, resource: wgpu::BindingResource::Sampler(&self.water_sampler)},
             ]
         });
 
@@ -585,6 +640,8 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_trans_material_view)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&self.gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&self.shadow_sampler)},
             ]
         });
 
@@ -598,6 +655,8 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 3, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_rm_view)},
                 BindGroupEntry {binding: 4, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_ao_view)},
                 BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_material_view)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&self.gbuffers.shadow_dist_view)},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::Sampler(&self.shadow_sampler)},
             ]
         });
     }
@@ -611,7 +670,25 @@ impl DeferredRenderer {
         for obj in scene.iter_mut() {
             obj.prepass(gpu, &self, &mut command_encoder);
         }
+        {
+            let mut shadow_pass = command_encoder.begin_render_pass(&RenderPassDescriptor{
+                label: Some("shadow-pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                    view: &self.gbuffers.shadow_dist_view,
+                    depth_ops: Some(Operations {load: LoadOp::Clear(0.0), store: StoreOp::Store}),
+                    stencil_ops: None
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
+            shadow_pass.set_bind_group(0, &self.global_bind_group, &[]);
+
+            for obj in scene.iter() {
+                obj.draw_shadow_casters(gpu, &self, &mut shadow_pass);
+            }
+        }
         {
             let mut underwater_pass = command_encoder.begin_render_pass(&RenderPassDescriptor{
                 label: Some("refracted-opaque-pass"),

@@ -18,8 +18,7 @@ struct TerrainParams {
 struct TerrainVertexOut {
     @builtin(position) clip_pos: vec4f,
     @location(0) world_pos: vec3f,
-    @location(1) refract_pos: vec3f,
-    @location(2) uv: vec2f,
+    @location(1) uv: vec2f,
 }
 
 @group(1) @binding(0) var<uniform> tparams: TerrainParams;
@@ -35,10 +34,19 @@ struct TerrainVertexOut {
 
     var out: TerrainVertexOut;
     out.clip_pos = clip_point(world_pos);
-    out.refract_pos = world_pos.xyz;
     out.world_pos = world_pos.xyz;
     out.uv = uv;
     return out;
+}
+
+@vertex fn terrain_mesh_shadow(@builtin(vertex_index) vert_idx: u32, @builtin(instance_index) inst_idx: u32) -> @builtin(position) vec4f {
+    let ij = vec2i(vec2u(inst_idx + (vert_idx % 2), vert_idx / 2));
+    let uv = vec2f(0.0, 1.0) + vec2f(1.0, -1.0) * vec2f(ij) / f32(tparams.grid_size);
+    let xy = tparams.radius * (2 * vec2f(ij) / f32(tparams.grid_size) - 1);
+    let z = tparams.z_scale * textureSampleLevel(terrain_height, terrain_height_sampler, uv, 0.0).x;
+    let world_pos = vec3f(xy, z);
+
+    return shadow_clip_point(world_pos);
 }
 
 const grass_col = vec3f(0.26406, 0.46721, 0.12113);
@@ -79,9 +87,10 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     // positive is more rocky
     let bias = perlin_noise_deriv(xy, mat2x2f(0.3, 0, 0, 0.3), 20);
 
-    let grass_uv = (xy + 1.5 * bias.xy) / 4;
-    let dirt_uv = (xy + 0.2 * bias.yx) / 3;
-    let rock_uv = (xy - 1.2 * bias.xy) / 8;
+    let base_uv = xy * vec2f(1.0, -1.0);
+    let grass_uv = (base_uv + 1.5 * bias.xy) / 4;
+    let dirt_uv = (base_uv + 0.2 * bias.yx) / 3;
+    let rock_uv = (base_uv - 1.2 * bias.xy) / 8;
     // splat textures
     let grass_co = textureSample(grass_co_tex, tex_sampler, grass_uv);
     let grass_nr = textureSample(grass_nr_tex, tex_sampler, grass_uv);
@@ -98,6 +107,7 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     params.co = mix(mix(dirt_co, grass_co, grass_fac), rock_co, rock_fac);
     //params.co = select(vec4f(1, 0, 0, 1), vec4f(0, 1, 0, 1), checker == 0.0);
     params.nr = mix(mix(dirt_nr, grass_nr, grass_fac), rock_nr, rock_fac);
+
     return params;
 }
 
@@ -115,14 +125,23 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     let params = terrain_tex(v.world_pos.xy, z, norm);
 
     let albedo = params.co.xyz;
-    let frag_norm = norm_mat * (2 * params.nr.xyz - 1);
+    let tan_norm = 2 * params.nr.xyz - 1;
+    let frag_norm = norm_mat * tan_norm;
+
+    // correction for naive normal downscaling and mipmapping
+    // see https://developer.download.nvidia.com/whitepapers/2006/Mipmapping_Normal_Maps.pdf
+    var rough = mix(1.0, params.nr.w, length(tan_norm));
+
+    if PATH_ID != PATH_REFRACT {
+        rough *= 0.5 + 0.5 * smoothstep(0.02, 0.15, v.world_pos.z);
+    }
 
     var out: GBufferPoint;
     //out.albedo = vec4f(0.5 + 0.5 * bias.z, 0.5 - 0.5 * bias.z, 0.0, 1.0);
     out.albedo = vec4f(albedo, 1.0);
     out.normal = vec4f(0.5 * (frag_norm + 1), 1.0);
     out.occlusion = params.co.w;
-    out.rough_metal = vec2f(params.nr.w, 0.02);
+    out.rough_metal = vec2f(rough, 0.0);
     out.mat_type = MAT_SOLID;
     return out;
 }
