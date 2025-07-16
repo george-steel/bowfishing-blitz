@@ -140,9 +140,39 @@ impl IBLFilter {
         let in_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_1k.rgbe.png").expect("Failed to load sky");
         let in_view = in_tex.create_view(&Default::default());
 
-        const BUFFER_SIZE: u64 = 1024*512*4*4;
+        const FHT_BUFFER_SIZE: u64 = 1024*512*4*4;
+        const SPECTRUM_BUFFER_SIZE: u64 = 512*4;
+        let spectrum_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor{
+            label: Some("spectrum_bg_layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None
+                    },
+                    count: None,
+                },
+            ]
+        });
+        let spectrum_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
+            label: Some("spectrum_layout"),
+            bind_group_layouts: &[&spectrum_bg_layout],
+            push_constant_ranges: &[]
+        });
+        let spectrum_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
+            label: Some("spectrum_pipeline"),
+            layout: Some(&spectrum_layout),
+            module: &self.bake_shader,
+            entry_point: Some("get_kernel_spectra"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         let fht1_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor{
-            label: Some("fht_bg_layout"),
+            label: Some("fht1_bg_layout"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -187,7 +217,7 @@ impl IBLFilter {
         });
 
         let fht2_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor{
-            label: Some("fht_bg_layout"),
+            label: Some("fht2_bg_layout"),
             entries: &[
                 BindGroupLayoutEntry {
                     binding: 0,
@@ -238,6 +268,16 @@ impl IBLFilter {
                     },
                     count: None,
                 },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ]
         });
         let blur_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
@@ -254,11 +294,26 @@ impl IBLFilter {
             cache: None,
         });
 
-        let hspec_buf = gpu.device.create_buffer(&BufferDescriptor {
-            label: Some("hspec_buf"),
-            size: BUFFER_SIZE,
+        let spectrum_buf = gpu.device.create_buffer(&BufferDescriptor {
+            label: Some("spectrum_buf"),
+            size: SPECTRUM_BUFFER_SIZE,
             usage: BufferUsages::STORAGE,
             mapped_at_creation: false 
+        });
+        let hspec_buf = gpu.device.create_buffer(&BufferDescriptor {
+            label: Some("hspec_buf"),
+            size: FHT_BUFFER_SIZE,
+            usage: BufferUsages::STORAGE,
+            mapped_at_creation: false 
+        });
+        let spectrum_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
+            label: Some("spectrum_bind"),
+            layout: &spectrum_bg_layout,
+            entries: &[BindGroupEntry {
+                    binding: 0,
+                    resource: spectrum_buf.as_entire_binding(),
+                },
+            ],
         });
         let fht1_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
             label: Some("fht1_bind"),
@@ -295,9 +350,12 @@ impl IBLFilter {
         let blur_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
             label: Some("blur_bind"),
             layout: &blur_bg_layout,
-            entries: &[
-                BindGroupEntry {
+            entries: &[BindGroupEntry {
                     binding: 0,
+                    resource: spectrum_buf.as_entire_binding(),
+                },
+                BindGroupEntry {
+                    binding: 1,
                     resource: hspec_buf.as_entire_binding(),
                 },
             ],
@@ -307,7 +365,12 @@ impl IBLFilter {
         let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: None,
         });
-
+        {
+            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("dht_pass"), timestamp_writes: None });
+            pass.set_pipeline(&spectrum_pipeline);
+            pass.set_bind_group(0, &spectrum_bind, &[]);
+            pass.dispatch_workgroups(256, 1, 1);
+        }
         {
             let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("dht_pass"), timestamp_writes: None });
             pass.set_pipeline(&fht1_pipeline);

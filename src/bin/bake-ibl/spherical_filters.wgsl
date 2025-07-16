@@ -62,7 +62,9 @@ override IMG_HEIGHT = 256;
 fn get_tex_in(col: u32, row: u32) -> vec3f {
     let u = (f32(col) + 0.5) / f32(FFTSIZE);
     let v = f32(2 * row + 1) / f32(FFTSIZE);
-    return textureSampleLevel(tex_in, tex_in_samp, vec2f(u, v), 0.0).xyz;
+    let tex = textureSampleLevel(tex_in, tex_in_samp, vec2f(u, v), 0.0).xyz;
+    return min(tex, vec3f(5.0));
+    //return tex;
 }
 
 @compute @workgroup_size(FFTSIZE / 2, 1, 1) fn horiz_fht_tex_to_buf(@builtin(workgroup_id) wg_id: vec3u, @builtin(local_invocation_id) local_id: vec3u) {
@@ -143,7 +145,7 @@ override MAX_SG = HEIGHT / 32;
 var<workgroup> sum_buffer: array<vec3f, MAX_SG>;
 var<workgroup> sum_result: vec3f;
 
-fn workgroupAdd(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: vec3f) -> vec3f {
+fn workgroupAddVec3f(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: vec3f) -> vec3f {
     let warp_sum = subgroupAdd(val);
     if sg_inv == 0 {
         sum_buffer[sg_id] = warp_sum;
@@ -161,8 +163,27 @@ fn workgroupAdd(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: vec3f) -> vec3
     }
     return workgroupUniformLoad(&sum_result);
 }
+fn workgroupAddF32(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: f32) -> f32 {
+    let warp_sum = subgroupAdd(val);
+    if sg_inv == 0 {
+        sum_buffer[sg_id] = vec3f(warp_sum, 0, 0);
+    }
+    workgroupBarrier();
+    var subtotal = 0.0;
+    if sg_id == 0 {
+        if sg_inv < num_subgroups {
+            subtotal = sum_buffer[sg_inv].x;
+        }
+        let total = subgroupAdd(subtotal);
+        if sg_inv == 0 {
+            sum_result = vec3f(total, 0, 0);
+        }
+    }
+    return workgroupUniformLoad(&sum_result).x;
+}
 
-fn workgroupMul(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: f32) -> f32 {
+
+fn workgroupMulF32(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: f32) -> f32 {
     let warp_sum = subgroupMul(val);
     if sg_inv == 0 {
         sum_buffer[sg_id] = vec3f(warp_sum, 0, 0);
@@ -181,11 +202,14 @@ fn workgroupMul(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: f32) -> f32 {
     return workgroupUniformLoad(&sum_result).x;
 }
 
-@group(0) @binding(0) var<storage, read_write> fhts_buf: array<vec3f>;
+@group(0) @binding(0) var<storage, read_write> spectrum_buf: array<f32>;
+@group(0) @binding(1) var<storage, read_write> fhts_buf: array<vec3f>;
 override BANDWIDTH: u32 = 512;
 
 var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
 
+// Blur th DHT slices using a spherical harmonic decomposition and the convolution theorem
+// Adapted from https://people.csail.mit.edu/ythomas/unpublished/6869.pdf
 @compute @workgroup_size(HEIGHT, 1, 1) fn blur_spectra(
     @builtin(workgroup_id) wg_id: vec3u,
     @builtin(local_invocation_id) local_id: vec3u,
@@ -213,8 +237,10 @@ var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
         let dw = PI * r / f32(HEIGHT) / 2;
 
         let p_init_fac = select(1.0, sqrt(f32(n+row) / f32(row) / 4), row > 0 && row <= n);
-        let p_init = workgroupMul(sg_id, sg_inv, num_subgroups, p_init_fac);
+        let p_init = workgroupMulF32(sg_id, sg_inv, num_subgroups, p_init_fac);
 
+        // calculate coefficients for Legendre polynomial recurrence
+        // https://doi.org/10.1016/S0377-0427(03)00546-6
         if row < BANDWIDTH {
             let nf = f32(n);
             let kf = f32(row);
@@ -232,10 +258,9 @@ var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
         for (var k = n; k < BANDWIDTH; k += 1) {
             let cap = (p * dw * (2 * f32(k) + 1)) * px_in;
             let cleancap = max(cap, vec3f(0)) + min(cap, vec3f(0));
-            let coeff = workgroupAdd(sg_id, sg_inv, num_subgroups, cleancap);
+            let coeff = workgroupAddVec3f(sg_id, sg_inv, num_subgroups, cleancap);
 
-            let rad = f32(k) / 64;
-            let blur = exp(- rad * rad);
+            let blur = spectrum_buf[k];
             px_out += p * blur * coeff;
 
             let vw = twiddles[k];
@@ -248,7 +273,68 @@ var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
     workgroupBarrier();
     fhts_buf[buf_idx] = px_out;
 
-} 
+}
+
+var<workgroup> spectrum: array<f32, BANDWIDTH>;
+const CONV_FAC = 4.0 * pow(PI, 1.5);
+
+@compute @workgroup_size(BANDWIDTH, 1, 1) fn get_kernel_spectra(
+    @builtin(workgroup_id) wg_id: vec3u,
+    @builtin(local_invocation_id) local_id: vec3u,
+    @builtin(subgroup_size) sg_size: u32,
+    @builtin(subgroup_invocation_id) sg_inv: u32
+) {
+    let sg_id = enumerate_subgroups(sg_inv);
+    workgroupBarrier();
+    if sg_id == 0 && sg_inv == 0 {
+        sg_counter_result = atomicLoad(&sg_counter);
+    }
+    let num_subgroups: u32 = workgroupUniformLoad(&sg_counter_result);
+
+    let row = local_id.x;
+
+    let theta = PI * (f32(row) + 0.5) / f32(HEIGHT);
+    let z = cos(theta);
+    let r = sin(theta);
+    let dw = PI * r / f32(HEIGHT) / 2;
+
+    let kernel_px = max(z, 0.0) / PI;
+
+    // calculate coefficients for Legendre polynomial recurrence
+    // https://doi.org/10.1016/S0377-0427(03)00546-6
+    if row < BANDWIDTH {
+        let kf = f32(row);
+        let twv = (2 * kf + 1) / (kf + 1);
+        let tww = kf / (kf + 1);
+        twiddles[row] = vec2f(twv, tww);
+    }
+    workgroupBarrier();
+
+    var p = 1.0;
+    var p1 = 0.0;
+    var p2 = 0.0;
+
+    for (var k: u32 = 0; k < BANDWIDTH; k += 1) {
+        let cap = (p * dw) * kernel_px;
+        let cleancap = max(cap, 0.0) + min(cap, 0.0); // remove NaNs
+        let coeff = workgroupAddF32(sg_id, sg_inv, num_subgroups, cleancap);
+
+        if row == 0 {
+            spectrum[k] = coeff;
+        }
+
+        let vw = twiddles[k];
+        p2 = p1;
+        p1 = p;
+        p = vw.x * z * p1 - vw.y * p2; 
+    }
+
+    workgroupBarrier();
+    if row < BANDWIDTH {
+        spectrum_buf[row] = spectrum[row] / spectrum[0];// * smoothstep(32.0, 16.0, f32(row));
+    }
+
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 

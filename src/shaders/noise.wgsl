@@ -1,4 +1,4 @@
-// LGC/Feistel-based 3d noise function
+// Feistel-based 3d noise function
 // https://www.jcgt.org/published/0009/03/02/paper.pdf
 fn pcg3d_snorm(p: vec3i) -> vec3f {
     var v = vec3u(p);

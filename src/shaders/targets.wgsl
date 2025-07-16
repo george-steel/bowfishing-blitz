@@ -82,6 +82,7 @@ var<private> QUAD_V: array<u32, 6> = array(0, 1, 0, 0, 1, 1);
         let sunk_pos = exploded_pos + sink_delta;
         local_pos = sunk_pos + quat_rotate(shard_rot, corner_delta);
         local_norm = quat_rotate(shard_rot, local_norm);
+        // local_tan is the axis so it does not rotate
     }
 
     let world_pos = quat_rotate(pot.rotate, local_pos) + pot.base_point;
