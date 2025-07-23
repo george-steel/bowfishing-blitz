@@ -63,7 +63,7 @@ fn get_tex_in(col: u32, row: u32) -> vec3f {
     let u = (f32(col) + 0.5) / f32(FFTSIZE);
     let v = f32(2 * row + 1) / f32(FFTSIZE);
     let tex = textureSampleLevel(tex_in, tex_in_samp, vec2f(u, v), 0.0).xyz;
-    return min(tex, vec3f(5.0));
+    return min(tex, vec3f(4.0));
     //return tex;
 }
 
@@ -293,12 +293,20 @@ const CONV_FAC = 4.0 * pow(PI, 1.5);
 
     let row = local_id.x;
 
+
     let theta = PI * (f32(row) + 0.5) / f32(HEIGHT);
     let z = cos(theta);
     let r = sin(theta);
     let dw = PI * r / f32(HEIGHT) / 2;
 
-    let kernel_px = max(z, 0.0) / PI;
+    let level = 7u;
+    let alpha = ldexp(1.0, -i32(level)); // roughness^2, approx lobe radius in rad at small angles
+    let z_clip = max(z, 0.0) / PI;
+    let a2 = alpha * alpha;
+    let nh = cos(theta / 2);
+    let nh2 = nh * nh;
+    let denom = nh2 * (a2 - 1.0) + 1.0;
+    let kernel_px = select(0.0, z_clip * a2 / (denom * denom), z > 0);
 
     // calculate coefficients for Legendre polynomial recurrence
     // https://doi.org/10.1016/S0377-0427(03)00546-6
