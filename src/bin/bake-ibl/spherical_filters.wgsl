@@ -1,8 +1,9 @@
 const TAU = 6.2831853072;
 const PI  = 3.1415926535;
 
-override FFTSIZE: u32 = 1024;
-override HEIGHT: u32 = FFTSIZE / 2;
+const HEIGHT: u32 = 512;
+const WIDTH: u32 = HEIGHT * 2;
+const LEVELS: u32 = 8;
 
 alias comp_colors = mat2x3f;
 
@@ -17,7 +18,7 @@ fn root_unity(num: i32, denom: u32) -> vec2f {
 }
 
 // complex color fft. Can process two lines of real data at once with post-transform
-var<workgroup> fft_buf: array<comp_colors, FFTSIZE>;
+var<workgroup> fft_buf: array<comp_colors, WIDTH>;
 fn do_fft(local_x: u32, inverse: bool) {
     {
         // bit-reverse shuffle step
@@ -26,7 +27,7 @@ fn do_fft(local_x: u32, inverse: bool) {
         let x = fft_buf[i];
         let y = fft_buf[j];
         workgroupBarrier();
-        let bits = firstLeadingBit(FFTSIZE);
+        let bits = firstLeadingBit(WIDTH);
         let shift = 32 - bits;
         let i2 = extractBits(reverseBits(i), shift, bits);
         let j2 = extractBits(reverseBits(j), shift, bits);
@@ -36,7 +37,7 @@ fn do_fft(local_x: u32, inverse: bool) {
     }
 
     let inverse_fac: i32 = select(-1, 1, inverse);
-    for (var group_size: u32 = 2; group_size <= FFTSIZE; group_size *= 2) {
+    for (var group_size: u32 = 2; group_size <= WIDTH; group_size *= 2) {
         let stride = group_size / 2;
         let t = local_x % stride;
         let i = 2 * local_x - t;
@@ -53,21 +54,19 @@ fn do_fft(local_x: u32, inverse: bool) {
     }
 }
 
-override IMG_HEIGHT = 256;
-
-@group(0) @binding(0) var tex_in: texture_2d<f32>;
+@group(0) @binding(0) var raw_tex_in: texture_2d<f32>;
 @group(0) @binding(1) var tex_in_samp: sampler;
-@group(0) @binding(2) var<storage, read_write> spectra_out: array<vec3f>;
+@group(0) @binding(2) var<storage, read_write> raw_spectra_out: array<vec3f>;
 
 fn get_tex_in(col: u32, row: u32) -> vec3f {
-    let u = (f32(col) + 0.5) / f32(FFTSIZE);
-    let v = f32(2 * row + 1) / f32(FFTSIZE);
-    let tex = textureSampleLevel(tex_in, tex_in_samp, vec2f(u, v), 0.0).xyz;
+    let u = (f32(col) + 0.5) / f32(WIDTH);
+    let v = (f32(row) + 0.5) / f32(HEIGHT);
+    let tex = textureSampleLevel(raw_tex_in, tex_in_samp, vec2f(u, v), 0.0).xyz;
     return min(tex, vec3f(4.0));
     //return tex;
 }
 
-@compute @workgroup_size(FFTSIZE / 2, 1, 1) fn horiz_fht_tex_to_buf(@builtin(workgroup_id) wg_id: vec3u, @builtin(local_invocation_id) local_id: vec3u) {
+@compute @workgroup_size(WIDTH / 2, 1, 1) fn horiz_fht_tex_to_buf(@builtin(workgroup_id) wg_id: vec3u, @builtin(local_invocation_id) local_id: vec3u) {
     let row = 2 * wg_id.x;
     let col = 2 * local_id.x;
 
@@ -79,7 +78,7 @@ fn get_tex_in(col: u32, row: u32) -> vec3f {
     
     // extract two Hartley transforms from FFT
     let i = local_id.x;
-    let j = select(FFTSIZE - i, FFTSIZE / 2, i == 0);
+    let j = select(WIDTH - i, WIDTH / 2, i == 0);
     let fi = fft_buf[i];
     let fj = fft_buf[j];
     var hi = fi;
@@ -89,30 +88,31 @@ fn get_tex_in(col: u32, row: u32) -> vec3f {
         hj = 0.5 * (comp_smul(vec2f(1, 1), fj) + comp_smul(vec2f(1, -1), fi));
     }
     
-    let norm: f32 = 1.0 / f32(FFTSIZE);
-    spectra_out[i * HEIGHT + row] = hi[0] * norm;
-    spectra_out[i * HEIGHT + row + 1] = hi[1] * norm;
-    spectra_out[j * HEIGHT + row] = hj[0] * norm;
-    spectra_out[j * HEIGHT + row + 1] = hj[1] * norm;
+    let norm: f32 = 1.0 / f32(WIDTH);
+    raw_spectra_out[i * HEIGHT + row] = hi[0] * norm;
+    raw_spectra_out[i * HEIGHT + row + 1] = hi[1] * norm;
+    raw_spectra_out[j * HEIGHT + row] = hj[0] * norm;
+    raw_spectra_out[j * HEIGHT + row + 1] = hj[1] * norm;
 }
 
-@group(0) @binding(0) var<storage, read> spectra_in: array<vec3f>;
-@group(0) @binding(1) var tex_out: texture_storage_2d<rgba16float, write>;
+@group(0) @binding(0) var<storage, read> blurred_spectra_in: array<vec3f>;
+@group(0) @binding(1) var tex_out: texture_storage_2d_array<rgba16float, write>;
 
-@compute @workgroup_size(FFTSIZE / 2, 1, 1) fn horiz_fht_buf_to_tex(@builtin(workgroup_id) wg_id: vec3u, @builtin(local_invocation_id) local_id: vec3u) {
+@compute @workgroup_size(WIDTH / 2, 1, 1) fn horiz_fht_buf_to_tex(@builtin(workgroup_id) wg_id: vec3u, @builtin(local_invocation_id) local_id: vec3u) {
     let row = 2 * wg_id.x;
     let col = 2 * local_id.x;
-    let colptr = col * HEIGHT;
+    let level = wg_id.y;
+    let colptr = level * 2 * HEIGHT * HEIGHT + col * HEIGHT;
 
-    fft_buf[col] = mat2x3f(spectra_in[colptr + row], spectra_in[colptr + row + 1]);
-    fft_buf[col+1] = mat2x3f(spectra_in[colptr + HEIGHT + row], spectra_in[colptr + HEIGHT + row + 1]);
+    fft_buf[col] = mat2x3f(blurred_spectra_in[colptr + row], blurred_spectra_in[colptr + row + 1]);
+    fft_buf[col+1] = mat2x3f(blurred_spectra_in[colptr + HEIGHT + row], blurred_spectra_in[colptr + HEIGHT + row + 1]);
     
     workgroupBarrier();
     do_fft(local_id.x, false);
     
     // extract two Hartley transforms from FFT
     let i = local_id.x;
-    let j = select(FFTSIZE - i, FFTSIZE / 2, i == 0);
+    let j = select(WIDTH - i, WIDTH / 2, i == 0);
     let fi = fft_buf[i];
     let fj = fft_buf[j];
     var hi = fi;
@@ -122,10 +122,10 @@ fn get_tex_in(col: u32, row: u32) -> vec3f {
         hj = 0.5 * (comp_smul(vec2f(1, 1), fj) + comp_smul(vec2f(1, -1), fi));
     }
     
-    textureStore(tex_out, vec2u(i, row), vec4f(hi[0], 1));
-    textureStore(tex_out, vec2u(i, row+1), vec4f(hi[1], 1));
-    textureStore(tex_out, vec2u(j, row), vec4f(hj[0] , 1));
-    textureStore(tex_out, vec2u(j, row+1), vec4f(hj[1], 1));
+    textureStore(tex_out, vec2u(i, row), level, vec4f(hi[0], 1));
+    textureStore(tex_out, vec2u(i, row+1), level, vec4f(hi[1], 1));
+    textureStore(tex_out, vec2u(j, row), level, vec4f(hj[0] , 1));
+    textureStore(tex_out, vec2u(j, row+1), level, vec4f(hj[1], 1));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -141,7 +141,7 @@ fn enumerate_subgroups(sg_inv: u32) -> u32 {
     return subgroupBroadcastFirst(sgid);
 }
 
-override MAX_SG = HEIGHT / 32;
+const MAX_SG = HEIGHT / 32;
 var<workgroup> sum_buffer: array<vec3f, MAX_SG>;
 var<workgroup> sum_result: vec3f;
 
@@ -202,11 +202,13 @@ fn workgroupMulF32(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: f32) -> f32
     return workgroupUniformLoad(&sum_result).x;
 }
 
-@group(0) @binding(0) var<storage, read_write> spectrum_buf: array<f32>;
-@group(0) @binding(1) var<storage, read_write> fhts_buf: array<vec3f>;
-override BANDWIDTH: u32 = 512;
+@group(0) @binding(0) var<storage, read> spectrum_buf_in: array<f32>;
+@group(0) @binding(1) var<storage, read> raw_spectra_in: array<vec3f>;
+@group(0) @binding(2) var<storage, read_write> blurred_spectra_out: array<vec3f>;
+const BANDWIDTH: u32 = HEIGHT;
 
 var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
+var<private> px_out: array<vec3f, 16>;
 
 // Blur th DHT slices using a spherical harmonic decomposition and the convolution theorem
 // Adapted from https://people.csail.mit.edu/ythomas/unpublished/6869.pdf
@@ -224,11 +226,10 @@ var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
     let num_subgroups: u32 = workgroupUniformLoad(&sg_counter_result);
 
     let n: u32 = (wg_id.x + 1) / 2;
-    let col = select(n, FFTSIZE - n, (wg_id.x & 1u) != 0);
+    let col = select(n, WIDTH - n, (wg_id.x & 1u) != 0);
     let row = local_id.x;
-    let buf_idx = col * HEIGHT + local_id.x;
-    let px_in = fhts_buf[buf_idx];
-    var px_out = vec3f(0.0);
+    let buf_idx = col * HEIGHT + row;
+    let px_in = raw_spectra_in[buf_idx];
 
     if n < BANDWIDTH {
         let theta = PI * (f32(row) + 0.5) / f32(HEIGHT);
@@ -260,8 +261,9 @@ var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
             let cleancap = max(cap, vec3f(0)) + min(cap, vec3f(0));
             let coeff = workgroupAddVec3f(sg_id, sg_inv, num_subgroups, cleancap);
 
-            let blur = spectrum_buf[k];
-            px_out += p * blur * coeff;
+            for (var lv = 0u; lv < LEVELS; lv += 1) {
+                px_out[lv] += p * coeff * spectrum_buf_in[k * LEVELS + lv];
+            }
 
             let vw = twiddles[k];
             p2 = p1;
@@ -271,10 +273,14 @@ var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
     }
 
     workgroupBarrier();
-    fhts_buf[buf_idx] = px_out;
+    for (var lv = 0u; lv < LEVELS; lv += 1) {
+        let colptr = lv * 2 * HEIGHT * HEIGHT + col * HEIGHT;
+        blurred_spectra_out[colptr + row] = px_out[lv];
+    }
 
 }
 
+@group(0) @binding(0) var<storage, read_write> spectrum_buf_out: array<f32>;
 var<workgroup> spectrum: array<f32, BANDWIDTH>;
 const CONV_FAC = 4.0 * pow(PI, 1.5);
 
@@ -299,7 +305,7 @@ const CONV_FAC = 4.0 * pow(PI, 1.5);
     let r = sin(theta);
     let dw = PI * r / f32(HEIGHT) / 2;
 
-    let level = 7u;
+    let level = wg_id.x;
     let alpha = ldexp(1.0, -i32(level)); // roughness^2, approx lobe radius in rad at small angles
     let z_clip = max(z, 0.0) / PI;
     let a2 = alpha * alpha;
@@ -339,7 +345,7 @@ const CONV_FAC = 4.0 * pow(PI, 1.5);
 
     workgroupBarrier();
     if row < BANDWIDTH {
-        spectrum_buf[row] = spectrum[row] / spectrum[0];// * smoothstep(32.0, 16.0, f32(row));
+        spectrum_buf_out[row * LEVELS + level] = spectrum[row] / spectrum[0];
     }
 
 }
@@ -360,8 +366,10 @@ struct FQOut {
     return out;
 }
 
+@group(0) @binding(0) var blurred_tex_in: texture_2d_array<f32>;
+
 @fragment fn display_tex(v: FQOut) -> @location(0) vec4f {
-    let raw = textureSampleLevel(tex_in, tex_in_samp, v.uv, 0.0).xyz;
+    let raw = textureSampleLevel(blurred_tex_in, tex_in_samp, v.uv, 4, 0.0).xyz;
     let col = raw / 2;
     return vec4f(col, 1);
 }
