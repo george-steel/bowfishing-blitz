@@ -10,12 +10,15 @@ pub struct IBLFilter {
     sampler: Sampler,
     filtered_tex: Texture,
     filtered_view: TextureView,
+    cube_tex: Texture,
+    cube_view: TextureView,
 }
 
 
 impl IBLFilter {
     const INPUT_HEIGHT: u32 = 512;
     const OUTPUT_LEVELS: u32 = 8;
+    const FACE_SIZE: u32 = 1 << Self::OUTPUT_LEVELS;
     const FHT_IN_BUFFER_SIZE: u64 = (2*Self::INPUT_HEIGHT*Self::INPUT_HEIGHT*4*4) as u64;
     const FHT_OUT_BUFFER_SIZE: u64 = Self::FHT_IN_BUFFER_SIZE*(Self::OUTPUT_LEVELS as u64);
     const SPECTRUM_BUFFER_SIZE: u64 = (Self::INPUT_HEIGHT*Self::OUTPUT_LEVELS*4) as u64;
@@ -34,7 +37,7 @@ impl IBLFilter {
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Texture {
                         sample_type: TextureSampleType::Float { filterable: true },
-                        view_dimension: TextureViewDimension::D2Array,
+                        view_dimension: TextureViewDimension::Cube,
                         multisampled: false
                     },
                     count: None,
@@ -79,7 +82,7 @@ impl IBLFilter {
 
         let filtered_tex = gpu.device.create_texture(&wgpu::TextureDescriptor{
             label: Some("filtered_tex"),
-            size: Extent3d{width: 2*Self::INPUT_HEIGHT, height: Self::INPUT_HEIGHT , depth_or_array_layers: Self::OUTPUT_LEVELS},
+            size: Extent3d{width: 2*Self::INPUT_HEIGHT, height: Self::INPUT_HEIGHT, depth_or_array_layers: Self::OUTPUT_LEVELS},
             format: TextureFormat::Rgba16Float,
             mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
@@ -93,13 +96,27 @@ impl IBLFilter {
             min_filter: FilterMode::Linear,
             ..Default::default()
         });
+
+        let cube_tex = gpu.device.create_texture(&wgpu::TextureDescriptor{
+            label: Some("filtered_tex"),
+            size: Extent3d{width: Self::FACE_SIZE, height: Self::FACE_SIZE, depth_or_array_layers: 6},
+            format: TextureFormat::Rgba16Float,
+            mip_level_count: Self::OUTPUT_LEVELS, sample_count: 1, dimension: wgpu::TextureDimension::D2,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let cube_view = cube_tex.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::Cube),
+            ..Default::default()
+        });
+
         let disp_bg = gpu.device.create_bind_group(&BindGroupDescriptor{
             label: Some("fht_bind"),
             layout: &disp_bg_layout,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&filtered_view),
+                    resource: BindingResource::TextureView(&cube_view),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -112,6 +129,7 @@ impl IBLFilter {
             bake_shader, 
             disp_pipeline, disp_bg,
             filtered_tex, filtered_view, sampler,
+            cube_tex, cube_view,
         }
     }
 
@@ -309,6 +327,51 @@ impl IBLFilter {
             cache: None,
         });
 
+        let cubify_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor{
+            label: Some("cubify_bg_layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: StorageTextureAccess::WriteOnly,
+                        format: TextureFormat::Rgba16Float,
+                        view_dimension: TextureViewDimension::D2Array,
+                    },
+                    count: None,
+                },
+            ]
+        });
+        let cubify_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
+            label: Some("cubify_layout"),
+            bind_group_layouts: &[&cubify_bg_layout],
+            push_constant_ranges: &[]
+        });
+        let cubify_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
+            label: Some("cubify_pipeline"),
+            layout: Some(&cubify_layout),
+            module: &self.bake_shader,
+            entry_point: Some("cubify"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         let spectrum_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("spectrum_buf"),
             size: Self::SPECTRUM_BUFFER_SIZE,
@@ -327,6 +390,7 @@ impl IBLFilter {
             usage: BufferUsages::STORAGE,
             mapped_at_creation: false 
         });
+        
         let spectrum_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
             label: Some("spectrum_bind"),
             layout: &spectrum_bg_layout,
@@ -371,7 +435,8 @@ impl IBLFilter {
         let blur_bind = gpu.device.create_bind_group(&BindGroupDescriptor{
             label: Some("blur_bind"),
             layout: &blur_bg_layout,
-            entries: &[BindGroupEntry {
+            entries: &[
+                BindGroupEntry {
                     binding: 0,
                     resource: spectrum_buf.as_entire_binding(),
                 },
@@ -413,6 +478,47 @@ impl IBLFilter {
             pass.set_pipeline(&fht2_pipeline);
             pass.set_bind_group(0, &fht2_bind, &[]);
             pass.dispatch_workgroups(Self::INPUT_HEIGHT / 2 as u32, Self::OUTPUT_LEVELS as u32, 1);
+        }
+        {
+            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("cubify_pass"), timestamp_writes: None });
+            pass.set_pipeline(&cubify_pipeline);
+
+            for mip in 0..Self::OUTPUT_LEVELS {
+                let level = Self::OUTPUT_LEVELS - mip - 1;
+                let wgdim = ((2 << level) /8).max(1);
+                let in_view = self.filtered_tex.create_view(&TextureViewDescriptor {
+                    dimension: Some(TextureViewDimension::D2),
+                    base_array_layer: level,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                });
+                let out_view = self.cube_tex.create_view(&TextureViewDescriptor {
+                    dimension: Some(TextureViewDimension::D2Array),
+                    base_mip_level: mip,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                });
+                let bg = gpu.device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("cubify_bg"),
+                    layout: &cubify_bg_layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&in_view),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: BindingResource::Sampler(&self.sampler),
+                        },
+                        BindGroupEntry {
+                            binding: 2,
+                            resource: BindingResource::TextureView(&out_view),
+                        },
+                    ],
+                });
+                pass.set_bind_group(0, &bg, &[]);
+                pass.dispatch_workgroups(wgdim, wgdim, 6);
+            }
         }
 
         gpu.queue.submit([encoder.finish()]);

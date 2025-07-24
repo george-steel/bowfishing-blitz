@@ -1,5 +1,8 @@
 const TAU = 6.2831853072;
 const PI  = 3.1415926535;
+const X = vec3f(1.0, 0.0, 0.0);
+const Y = vec3f(0.0, 1.0, 0.0);
+const Z = vec3f(0.0, 0.0, 1.0);
 
 const HEIGHT: u32 = 512;
 const WIDTH: u32 = HEIGHT * 2;
@@ -352,9 +355,43 @@ const CONV_FAC = 4.0 * pow(PI, 1.5);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+const CUBE_FACES: array<mat3x3f, 6> = array(
+    mat3x3f(X, -Z, -Y),
+    mat3x3f(-X, Z, -Y),
+    mat3x3f(Y, X, Z),
+    mat3x3f(-Y, X, -Z),
+    mat3x3f(Z, X, -Y),
+    mat3x3f(-Z, -X, -Y)
+);
+
+override U_AT_PLUSX: f32 = 0.5;
+
+@group(0) @binding(0) var equi_tex_in: texture_2d<f32>;
+@group(0) @binding(2) var cube_tex_out: texture_storage_2d_array<rgba16float, write>;
+@compute @workgroup_size(8, 8, 1) fn cubify(@builtin(global_invocation_id) global_id: vec3u, @builtin(workgroup_id) wg_id: vec3u) {
+    let px = global_id.xy;
+    let face = wg_id.z;
+    let dims = textureDimensions(cube_tex_out);
+    if (px.x >= dims.x || px.y >= dims.y) {
+        return;
+    }
+
+    let uv = (vec2f(px) + 0.5) / vec2f(dims);
+    let fst = vec3f(1.0, 2 * uv - 1);
+    let look = CUBE_FACES[face] * fst;
+
+    let v = 0.5 - atan2(look.z, length(look.xy)) / PI;
+    let u = U_AT_PLUSX - atan2(look.y, look.x) / TAU;
+
+    let col = textureSampleLevel(equi_tex_in, tex_in_samp, vec2f(u, v), 0.0);
+    textureStore(cube_tex_out, px, face, col);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 struct FQOut {
     @builtin(position) pos: vec4f,
-    @location(0) uv: vec2f,
+    @location(0) xy: vec2f,
 }
 
 @vertex fn fullscreen_quad(@builtin(vertex_index) vert_idx: u32) -> FQOut {
@@ -362,14 +399,18 @@ struct FQOut {
     let xy = 2.0 * vec2f(ij) - 1.0;
     var out: FQOut;
     out.pos = vec4f(xy, 0.0, 1.0);
-    out.uv = vec2f(vec2u(ij.x, 1-ij.y));
+    out.xy = xy;
     return out;
 }
 
-@group(0) @binding(0) var blurred_tex_in: texture_2d_array<f32>;
+@group(0) @binding(0) var blurred_tex_in: texture_cube<f32>;
 
 @fragment fn display_tex(v: FQOut) -> @location(0) vec4f {
-    let raw = textureSampleLevel(blurred_tex_in, tex_in_samp, v.uv, 4, 0.0).xyz;
+    let z = sin(PI * v.xy.y / 2);
+    let rho = cos(PI * v.xy.y / 2);
+    let phi = - PI * v.xy.x;
+    let dir = vec3f(rho * cos(phi), rho * sin(phi), z);
+    let raw = textureSampleLevel(blurred_tex_in, tex_in_samp, dir, 4.0).xyz;
     let col = raw / 2;
     return vec4f(col, 1);
 }
