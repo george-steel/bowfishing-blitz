@@ -47,7 +47,15 @@ fn main() {
     let init_time = Instant::now();
     let window = &window;
     let baker = ibl_filter::IBLFilter::new(&gpu);
-    baker.do_filtering(&gpu);
+
+    let in_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_1k.rgbe.png").expect("Failed to load sky");
+    let in_view = in_tex.create_view(&Default::default());
+    baker.bake_maps(&gpu, &in_view, "test");
+
+    let sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_puresky_2k.rgbe.png").expect("Failed to load sky");
+    let sky_view = sky_tex.create_view(&Default::default());
+    baker.bake_cube(&gpu, &sky_view, "skybox", 512);
+
     event_loop
         .run(move |event, target| {
             // Have the closure take ownership of the resources.
