@@ -30,7 +30,7 @@ fn main() {
     let gpu = pollster::block_on(GPUContext::with_limits(
         wgpu_inst,
         Some(&surface),
-        Features::SUBGROUP | Features::FLOAT32_FILTERABLE,
+        Features::SUBGROUP | Features::MAPPABLE_PRIMARY_BUFFERS,
         wgpu::Limits {
             max_compute_workgroup_size_x: 512,
             max_compute_invocations_per_workgroup: 512,

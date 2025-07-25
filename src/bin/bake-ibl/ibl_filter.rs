@@ -1,6 +1,7 @@
 use bowfishing_blitz::{gputil::mip::MipMaker, *};
 use gputil::*;
-use std::{borrow::Cow, default};
+use rgbe::{RGBA16F, RGBE8};
+use std::{borrow::Cow, default, path::Path};
 use wgpu::*;
 
 pub struct IBLFilter {
@@ -19,6 +20,7 @@ impl IBLFilter {
     const INPUT_HEIGHT: u32 = 512;
     const OUTPUT_LEVELS: u32 = 8;
     const FACE_SIZE: u32 = 1 << Self::OUTPUT_LEVELS;
+    const IRRADIANCE_SIZE: u32 = 32;
     const FHT_IN_BUFFER_SIZE: u64 = (2*Self::INPUT_HEIGHT*Self::INPUT_HEIGHT*4*4) as u64;
     const FHT_OUT_BUFFER_SIZE: u64 = Self::FHT_IN_BUFFER_SIZE*(Self::OUTPUT_LEVELS as u64);
     const SPECTRUM_BUFFER_SIZE: u64 = (Self::INPUT_HEIGHT*Self::OUTPUT_LEVELS*4) as u64;
@@ -372,6 +374,45 @@ impl IBLFilter {
             cache: None,
         });
 
+        let pack_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor{
+            label: Some("cubify_bg_layout"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2Array,
+                        multisampled: false
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Buffer {
+                        ty: BufferBindingType::Storage { read_only: false },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ]
+        });
+        let pack_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
+            label: Some("pack_layout"),
+            bind_group_layouts: &[&pack_bg_layout],
+            push_constant_ranges: &[]
+        });
+        let pack_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
+            label: Some("pack_pipeline"),
+            layout: Some(&pack_layout),
+            module: &self.bake_shader,
+            entry_point: Some("pack_tex_rgba16f"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+
         let spectrum_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("spectrum_buf"),
             size: Self::SPECTRUM_BUFFER_SIZE,
@@ -388,6 +429,38 @@ impl IBLFilter {
             label: Some("hspec_out_buf"),
             size: Self::FHT_OUT_BUFFER_SIZE,
             usage: BufferUsages::STORAGE,
+            mapped_at_creation: false 
+        });
+
+        let mut radiance_buf_size = 0;
+        let mut face_size = Self::FACE_SIZE;
+        for mip in 0..Self::OUTPUT_LEVELS {
+            radiance_buf_size += face_size * face_size * 6 * 8;
+            face_size /= 2;
+        }
+        radiance_buf_size = wgpu::util::align_to(radiance_buf_size, Self::FACE_SIZE * 8);
+        let radiance_buf_height = radiance_buf_size / (Self::FACE_SIZE * 8);
+
+        let radiance_out_buf = gpu.device.create_buffer(&BufferDescriptor {
+            label: Some("radiance_out_buf"),
+            size: radiance_buf_size as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::MAP_READ,
+            mapped_at_creation: false 
+        });
+
+        let irradiance_cube_tex = gpu.device.create_texture(&wgpu::TextureDescriptor{
+            label: Some("irradiance_tex"),
+            size: Extent3d{width: Self::IRRADIANCE_SIZE, height: Self::IRRADIANCE_SIZE, depth_or_array_layers: 6},
+            format: TextureFormat::Rgba16Float,
+            mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
+        let irradiance_buf_size = Self::IRRADIANCE_SIZE * Self::IRRADIANCE_SIZE * 6 * 8;
+        let irradiance_out_buf = gpu.device.create_buffer(&BufferDescriptor {
+            label: Some("irradiance_out_buf"),
+            size: irradiance_buf_size as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::MAP_READ,
             mapped_at_creation: false 
         });
         
@@ -519,8 +592,111 @@ impl IBLFilter {
                 pass.set_bind_group(0, &bg, &[]);
                 pass.dispatch_workgroups(wgdim, wgdim, 6);
             }
+            {
+                let wgdim = Self::IRRADIANCE_SIZE / 8;
+                let in_view = self.filtered_tex.create_view(&TextureViewDescriptor {
+                    dimension: Some(TextureViewDimension::D2),
+                    base_array_layer: 0,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                });
+                let out_view = irradiance_cube_tex.create_view(&TextureViewDescriptor {
+                    dimension: Some(TextureViewDimension::D2Array),
+                    ..Default::default()
+                });
+                let bg = gpu.device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("cubify_bg"),
+                    layout: &cubify_bg_layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&in_view),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: BindingResource::Sampler(&self.sampler),
+                        },
+                        BindGroupEntry {
+                            binding: 2,
+                            resource: BindingResource::TextureView(&out_view),
+                        },
+                    ],
+                });
+                pass.set_bind_group(0, &bg, &[]);
+                pass.dispatch_workgroups(wgdim, wgdim, 6);
+            }
+        }
+        {
+            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("pack_pass"), timestamp_writes: None });
+            pass.set_pipeline(&pack_pipeline);
+
+            let rad_dim = Self::FACE_SIZE / 8;
+            let irr_dim = Self::IRRADIANCE_SIZE / 8;
+            
+            let rad_bg = gpu.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("pack_bg"),
+                layout: &pack_bg_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(&self.cube_tex.create_view(&Default::default())),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: radiance_out_buf.as_entire_binding(),
+                    },
+                ],
+            });
+            pass.set_bind_group(0, &rad_bg, &[]);
+            pass.dispatch_workgroups(rad_dim, rad_dim, 6);
+
+            let irr_bg = gpu.device.create_bind_group(&BindGroupDescriptor {
+                label: Some("pack_bg"),
+                layout: &pack_bg_layout,
+                entries: &[
+                    BindGroupEntry {
+                        binding: 0,
+                        resource: BindingResource::TextureView(&irradiance_cube_tex.create_view(&Default::default())),
+                    },
+                    BindGroupEntry {
+                        binding: 1,
+                        resource: irradiance_out_buf.as_entire_binding(),
+                    },
+                ],
+            });
+            pass.set_bind_group(0, &irr_bg, &[]);
+            pass.dispatch_workgroups(irr_dim, irr_dim, 6);
         }
 
         gpu.queue.submit([encoder.finish()]);
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let tx2 = tx.clone();
+        let radiance_slice = radiance_out_buf.slice(..);
+        radiance_slice.map_async(wgpu::MapMode::Read, move |result| {
+            log::info!("got signal");
+            tx.send(result).unwrap();
+        });
+        let irradiance_slice = irradiance_out_buf.slice(..);
+        irradiance_slice.map_async(wgpu::MapMode::Read, move |result| {
+            log::info!("got signal");
+            tx2.send(result).unwrap();
+        });
+
+        gpu.device.poll(wgpu::Maintain::Wait);
+        rx.recv().unwrap().unwrap();
+        rx.recv().unwrap().unwrap();
+
+        let radiance_range = radiance_slice.get_mapped_range();
+        let radiance_floats: &[RGBA16F] = bytemuck::cast_slice(&radiance_range);
+        let radiance_rgbe: Box<[RGBE8]> = radiance_floats.iter().copied().map(rgbe::RGBA16F::into_rgbe8).collect();
+        let radiance_path = Path::new("./assets/staging/radiance.mipcube.rgbe8.png");
+        rgbe::save_rgbe8_png_file(radiance_path, Self::FACE_SIZE, radiance_buf_height, &radiance_rgbe).unwrap();
+
+        let irradiance_range = irradiance_slice.get_mapped_range();
+        let irradiance_floats: &[RGBA16F] = bytemuck::cast_slice(&irradiance_range);
+        let irradiance_rgbe: Box<[RGBE8]> = irradiance_floats.iter().copied().map(rgbe::RGBA16F::into_rgbe8).collect();
+        let irradiance_path = Path::new("./assets/staging/irradiance.cube.rgbe8.png");
+        rgbe::save_rgbe8_png_file(irradiance_path, Self::IRRADIANCE_SIZE, Self::IRRADIANCE_SIZE * 6, &irradiance_rgbe).unwrap();
     }
 }

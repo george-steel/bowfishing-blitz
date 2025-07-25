@@ -355,6 +355,8 @@ const CONV_FAC = 4.0 * pow(PI, 1.5);
 
 ////////////////////////////////////////////////////////////////////////////////
 
+// adapted from https://gpuweb.github.io/gpuweb/#texture-view-creation
+// takes 1, u, v (both snorm)
 const CUBE_FACES: array<mat3x3f, 6> = array(
     mat3x3f(X, -Z, -Y),
     mat3x3f(-X, Z, -Y),
@@ -385,6 +387,31 @@ override U_AT_PLUSX: f32 = 0.5;
 
     let col = textureSampleLevel(equi_tex_in, tex_in_samp, vec2f(u, v), 0.0);
     textureStore(cube_tex_out, px, face, col);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+@group(0) @binding(0) var tex_array_in: texture_2d_array<f32>;
+@group(0) @binding(1) var<storage, read_write> packed_buf_out: array<vec2u>;
+
+@compute @workgroup_size(8, 8, 1) fn pack_tex_rgba16f(@builtin(global_invocation_id) global_id: vec3u, @builtin(workgroup_id) wg_id: vec3u) {
+    let px = global_id.xy;
+    let layer = wg_id.z;
+    let num_mips = textureNumLevels(tex_array_in);
+    let num_layers = textureNumLayers(tex_array_in);
+
+    var base_ptr = 0u;
+    for (var mip: u32 = 0; mip < num_mips; mip += 1) {
+        let dims = textureDimensions(tex_array_in, mip);
+        if (px.x < dims.x && px.y < dims.y) {
+            let col = textureLoad(tex_array_in, px, layer, i32(mip));
+            let packed_col = vec2u(pack2x16float(col.xy), pack2x16float(col.zw));
+            let layer_offset = dims.x * dims.y * layer;
+            let idx = base_ptr + layer_offset + px.y * dims.x + px.x;
+            packed_buf_out[idx] = packed_col;
+        }
+        base_ptr += dims.x * dims.y * num_layers;
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
