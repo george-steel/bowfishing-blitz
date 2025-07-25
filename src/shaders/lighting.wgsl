@@ -212,7 +212,7 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     let px = vec2i(floor(pos.xy));
     let material = textureLoad(material_buf, px, 0).x;
     if material == MAT_SKY {
-        return vec4f(sun.water_lim_color, 1.0);
+        return vec4f(sun.water_lim_color, 1);
     }
 
     let clip_xy = ((pos.xy / camera.water_fb_size) - 0.5)  * vec2f(2, -2);

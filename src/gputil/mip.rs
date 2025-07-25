@@ -142,6 +142,7 @@ impl MipMaker {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &out_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(Color::BLACK),
@@ -159,8 +160,8 @@ impl MipMaker {
 
             drop(rpass);
             encoder.copy_texture_to_texture(
-                ImageCopyTexture {texture: &temp_tex, mip_level: i, origin: Origin3d::ZERO, aspect: TextureAspect::All },
-                ImageCopyTexture {texture: &tex, mip_level: i+1, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+                TexelCopyTextureInfo {texture: &temp_tex, mip_level: i, origin: Origin3d::ZERO, aspect: TextureAspect::All },
+                TexelCopyTextureInfo {texture: &tex, mip_level: i+1, origin: Origin3d::ZERO, aspect: TextureAspect::All },
                 mip_size,
             );
 

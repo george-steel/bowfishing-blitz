@@ -32,7 +32,8 @@ impl GPUContext {
             required_features: features,
             required_limits: limits,
             memory_hints: wgpu::MemoryHints::Performance,
-        }, None)
+            trace: wgpu::Trace::Off,
+        })
         .await
         .expect("Failed to create device");
 
@@ -104,9 +105,9 @@ impl GPUContext {
             view_formats: &[],
         });
         self.queue.write_texture(
-            wgpu::ImageCopyTexture{texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
+            wgpu::TexelCopyTextureInfo{texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
             bytemuck::cast_slice(&img.data),
-            wgpu::ImageDataLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(img.height as u32)},
+            wgpu::TexelCopyBufferLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(img.height as u32)},
             size);
         tex
     }
@@ -129,9 +130,9 @@ impl GPUContext {
             view_formats: &[],
         });
         self.queue.write_texture(
-            wgpu::ImageCopyTexture{texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
+            wgpu::TexelCopyTextureInfo{texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
             bytemuck::cast_slice(&img.data),
-            wgpu::ImageDataLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(img.height as u32)},
+            wgpu::TexelCopyBufferLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(img.height as u32)},
             size);
         
         mip::MipMaker::get(&self).make_mips(&self, &tex);
@@ -156,9 +157,9 @@ impl GPUContext {
             view_formats: &[],
         });
         self.queue.write_texture(
-            wgpu::ImageCopyTexture{texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
+            wgpu::TexelCopyTextureInfo{texture: &tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
             bytemuck::cast_slice(&img.data),
-            wgpu::ImageDataLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(height)},
+            wgpu::TexelCopyBufferLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(height)},
             size);
         tex
     }

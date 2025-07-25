@@ -145,6 +145,7 @@ impl IBLFilter {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -683,7 +684,7 @@ impl IBLFilter {
             tx2.send(result).unwrap();
         });
 
-        gpu.device.poll(wgpu::Maintain::Wait);
+        gpu.device.poll(wgpu::PollType::Wait).unwrap();
         rx.recv().unwrap().unwrap();
         rx.recv().unwrap().unwrap();
 
