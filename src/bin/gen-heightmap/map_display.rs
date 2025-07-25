@@ -53,6 +53,7 @@ impl FragDisplay {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -135,6 +136,7 @@ impl FragDisplay {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &height_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -150,15 +152,15 @@ impl FragDisplay {
             rpass.draw(0..4, 0..1);
         }
         encoder.copy_texture_to_buffer(
-            wgpu::ImageCopyTexture {
+            wgpu::TexelCopyTextureInfo {
                 aspect: wgpu::TextureAspect::All,
                         texture: &height_texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
-            wgpu::ImageCopyBuffer {
+            wgpu::TexelCopyBufferInfo {
                 buffer: &output_buffer,
-                layout: wgpu::ImageDataLayout {
+                layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(u16_size * texture_size),
                     rows_per_image: None,
@@ -178,7 +180,7 @@ impl FragDisplay {
             tx.send(result).unwrap();
         });
 
-        gpu.device.poll(wgpu::Maintain::Wait);
+        gpu.device.poll(wgpu::PollType::Wait);
         rx.recv().unwrap().unwrap();
 
         log::info!("mapped height buffer");

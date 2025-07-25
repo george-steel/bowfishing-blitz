@@ -695,26 +695,31 @@ impl DeferredRenderer {
                 color_attachments: &[
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.water_trans_albedo_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.water_trans_normal_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.water_trans_rm_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.water_trans_ao_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.water_trans_material_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
@@ -739,6 +744,7 @@ impl DeferredRenderer {
                 label: Some("refracted-lighting_pass"),
                 color_attachments: &[Some(RenderPassColorAttachment{
                     view: &self.gbuffers.water_trans_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: ZERO_COLOR,
                 })],
@@ -759,26 +765,31 @@ impl DeferredRenderer {
                 color_attachments: &[
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.water_refl_albedo_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.water_refl_normal_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.water_refl_rm_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.water_refl_ao_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.water_refl_material_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
@@ -803,6 +814,7 @@ impl DeferredRenderer {
                 label: Some("reflected-lighting_pass"),
                 color_attachments: &[Some(RenderPassColorAttachment{
                     view: &self.gbuffers.water_refl_view,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: ZERO_COLOR,
                 })],
@@ -825,26 +837,31 @@ impl DeferredRenderer {
                 color_attachments: &[
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.albedo_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.normal_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.rm_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.ao_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
                     Some(RenderPassColorAttachment{
                         view: &self.gbuffers.material_view,
+                        depth_slice: None,
                         resolve_target: None,
                         ops: ZERO_COLOR,
                     }),
@@ -869,6 +886,7 @@ impl DeferredRenderer {
                 label: Some("lighting_pass"),
                 color_attachments: &[Some(RenderPassColorAttachment{
                     view: &out,
+                    depth_slice: None,
                     resolve_target: None,
                     ops: ZERO_COLOR,
                 })],
@@ -900,14 +918,15 @@ impl DeferredRenderer {
 
     const PATH_REFRACT: u32 = 1;
     const PATH_REFLECT: u32 = 2;
+    const OVERRIDES_REFRACT: &[(&str, f64)] = &[("PATH_ID", Self::PATH_REFRACT as f64)];
+    const OVERRIDES_REFLECT: &[(&str, f64)] = &[("PATH_ID", Self::PATH_REFLECT as f64)];
 
     pub fn create_refracted_pipeline(device: &wgpu::Device, desc: &wgpu::RenderPipelineDescriptor) -> wgpu::RenderPipeline {
         let mut desc2 = desc.clone();
 
-        let overrides = HashMap::from([(String::from("PATH_ID"), Self::PATH_REFRACT as f64)]);
-        desc2.vertex.compilation_options.constants = &overrides;
+        desc2.vertex.compilation_options.constants = Self::OVERRIDES_REFRACT;
         if let Some(frag) = desc2.fragment.as_mut() {
-           frag.compilation_options.constants = &overrides;
+           frag.compilation_options.constants = Self::OVERRIDES_REFRACT;
         };
         device.create_render_pipeline(&desc2)
     }
@@ -915,10 +934,9 @@ impl DeferredRenderer {
     pub fn create_reflected_pipeline(device: &wgpu::Device, desc: &wgpu::RenderPipelineDescriptor) -> wgpu::RenderPipeline {
         let mut desc2 = desc.clone();
 
-        let overrides = HashMap::from([(String::from("PATH_ID"), Self::PATH_REFLECT as f64)]);
-        desc2.vertex.compilation_options.constants = &overrides;
+        desc2.vertex.compilation_options.constants = Self::OVERRIDES_REFLECT;
         if let Some(frag) = desc2.fragment.as_mut() {
-           frag.compilation_options.constants = &overrides;
+           frag.compilation_options.constants = Self::OVERRIDES_REFLECT;
         };
         desc2.primitive.front_face = match desc2.primitive.front_face {
             FrontFace::Cw => FrontFace::Ccw,
