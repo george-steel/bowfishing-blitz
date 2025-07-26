@@ -438,7 +438,7 @@ impl IBLFilter {
         gpu.queue.submit([encoder.finish()]);
     }
 
-    pub fn bake_maps(&self, gpu: &GPUContext, in_view: &TextureView, name: &str) {
+    pub fn bake_maps(&self, gpu: &GPUContext, in_view: &TextureView, name: Option<&str>) {
         let spectrum_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("spectrum_buf"),
             size: Self::SPECTRUM_BUFFER_SIZE,
@@ -710,30 +710,32 @@ impl IBLFilter {
         let tx2 = tx.clone();
         let radiance_slice = radiance_out_buf.slice(..);
         radiance_slice.map_async(wgpu::MapMode::Read, move |result| {
-            log::info!("got signal");
             tx.send(result).unwrap();
         });
         let irradiance_slice = irradiance_out_buf.slice(..);
         irradiance_slice.map_async(wgpu::MapMode::Read, move |result| {
-            log::info!("got signal");
             tx2.send(result).unwrap();
         });
 
         gpu.device.poll(wgpu::PollType::Wait).unwrap();
         rx.recv().unwrap().unwrap();
         rx.recv().unwrap().unwrap();
+        log::info!("mapping complete");
 
-        let radiance_range = radiance_slice.get_mapped_range();
-        let radiance_floats: &[RGBA16F] = bytemuck::cast_slice(&radiance_range);
-        let radiance_rgbe: Box<[RGBE8]> = radiance_floats.iter().copied().map(rgbe::RGBA16F::into_rgbe8).collect();
-        let radiance_path = format!("./assets/staging/{}-radiance.mipcube.rgbe8.png", name);
-        rgbe::save_rgbe8_png_file(radiance_path.as_ref(), Self::FACE_SIZE, radiance_buf_height, &radiance_rgbe).unwrap();
+        if let Some(name) = name {
+            let radiance_range = radiance_slice.get_mapped_range();
+            let radiance_floats: &[RGBA16F] = bytemuck::cast_slice(&radiance_range);
+            let radiance_rgbe: Box<[RGBE8]> = radiance_floats.iter().copied().map(rgbe::RGBA16F::into_rgbe8).collect();
+            let radiance_path = format!("./assets/staging/{}-radiance.mipcube.rgbe8.png", name);
+            rgbe::save_rgbe8_png_file(radiance_path.as_ref(), Self::FACE_SIZE, radiance_buf_height, &radiance_rgbe).unwrap();
 
-        let irradiance_range = irradiance_slice.get_mapped_range();
-        let irradiance_floats: &[RGBA16F] = bytemuck::cast_slice(&irradiance_range);
-        let irradiance_rgbe: Box<[RGBE8]> = irradiance_floats.iter().copied().map(rgbe::RGBA16F::into_rgbe8).collect();
-        let irradiance_path = format!("./assets/staging/{}-irradiance.mipcube.rgbe8.png", name);
-        rgbe::save_rgbe8_png_file(irradiance_path.as_ref(), Self::IRRADIANCE_SIZE, Self::IRRADIANCE_SIZE * 6, &irradiance_rgbe).unwrap();
+            let irradiance_range = irradiance_slice.get_mapped_range();
+            let irradiance_floats: &[RGBA16F] = bytemuck::cast_slice(&irradiance_range);
+            let irradiance_rgbe: Box<[RGBE8]> = irradiance_floats.iter().copied().map(rgbe::RGBA16F::into_rgbe8).collect();
+            let irradiance_path = format!("./assets/staging/{}-irradiance.mipcube.rgbe8.png", name);
+            rgbe::save_rgbe8_png_file(irradiance_path.as_ref(), Self::IRRADIANCE_SIZE, Self::IRRADIANCE_SIZE * 6, &irradiance_rgbe).unwrap();
+            log::info!("save complete");
+        }
 
         spectrum_buf.destroy();
         hspec_in_buf.destroy();
@@ -823,17 +825,20 @@ impl IBLFilter {
         let (tx, rx) = std::sync::mpsc::channel();
         let cube_slice = cube_out_buf.slice(..);
         cube_slice.map_async(wgpu::MapMode::Read, move |result| {
-            log::info!("got signal");
             tx.send(result).unwrap();
         });
         gpu.device.poll(wgpu::PollType::Wait).unwrap();
         rx.recv().unwrap().unwrap();
+        log::info!("mapping complete");
 
         let cube_range = cube_slice.get_mapped_range();
         let cube_floats: &[RGBA16F] = bytemuck::cast_slice(&cube_range);
         let cube_rgbe: Box<[RGBE8]> = cube_floats.iter().copied().map(rgbe::RGBA16F::into_rgbe8).collect();
         let cube_path = format!("./assets/staging/{}.cube.rgbe8.png", name);
         rgbe::save_rgbe8_png_file(cube_path.as_ref(), size, size * 6, &cube_rgbe).unwrap();
+
+        log::info!("save complete");
+
 
         cube_tex.destroy();
         cube_out_buf.destroy();

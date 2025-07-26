@@ -4,6 +4,7 @@ use camera::*;
 use wgpu::Features;
 
 mod ibl_filter;
+mod water_filter;
 
 use std::time::Instant;
 
@@ -46,17 +47,29 @@ fn main() {
     let mut size = window_size(&window);
     gpu.configure_surface_target(&surface, size);
 
-    let init_time = Instant::now();
     let window = &window;
     let baker = ibl_filter::IBLFilter::new(&gpu);
+    let water_baker = water_filter::WaterFilter::new(&gpu);
 
-    let in_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_2k.rgbe.png").expect("Failed to load sky");
-    let in_view = in_tex.create_view(&Default::default());
-    baker.bake_maps(&gpu, &in_view, "test");
+    let raw_sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_2k.rgbe.png").expect("Failed to load sky");
+    let raw_sky_view = raw_sky_tex.create_view(&Default::default());
+    baker.bake_maps(&gpu, &raw_sky_view, None);
 
-    let sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_puresky_2k.rgbe.png").expect("Failed to load sky");
-    let sky_view = sky_tex.create_view(&Default::default());
-    baker.bake_cube(&gpu, &sky_view, "skybox", 512);
+    let above_tex = water_baker.render_above(&gpu, &raw_sky_view, &baker.cube_view);
+    let above_view = above_tex.create_view(&Default::default());
+    baker.bake_maps(&gpu, &above_view, Some("above"));
+
+    let clamped_tex = water_baker.render_clamp(&gpu, &raw_sky_view);
+    let clamped_view = clamped_tex.create_view(&Default::default());
+    baker.bake_maps(&gpu, &clamped_view, None);
+
+    let below_tex = water_baker.render_below(&gpu, &raw_sky_view, &baker.cube_view);
+    let below_view = below_tex.create_view(&Default::default());
+    baker.bake_maps(&gpu, &below_view, Some("below"));
+
+    //let sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_puresky_2k.rgbe.png").expect("Failed to load sky");
+    //let sky_view = sky_tex.create_view(&Default::default());
+    //baker.bake_cube(&gpu, &sky_view, "skybox", 512);
 
     event_loop
         .run(move |event, target| {

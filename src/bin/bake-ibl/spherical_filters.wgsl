@@ -65,7 +65,7 @@ fn get_tex_in(col: u32, row: u32) -> vec3f {
     let u = (f32(col) + 0.5) / f32(WIDTH);
     let v = (f32(row) + 0.5) / f32(HEIGHT);
     let tex = textureSampleLevel(raw_tex_in, tex_in_samp, vec2f(u, v), 0.0).xyz;
-    return min(tex, vec3f(4.0));
+    return min(tex, vec3f(640000.0));
     //return tex;
 }
 
