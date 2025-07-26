@@ -35,6 +35,8 @@ fn main() {
             max_compute_workgroup_size_x: 512,
             max_compute_invocations_per_workgroup: 512,
             max_compute_workgroup_storage_size: 65536,
+            max_buffer_size: 512 * 1024 * 1024,
+            max_storage_buffer_binding_size: 512 * 1024 * 1024,
             ..Default::default()
         },
     ));
@@ -48,7 +50,7 @@ fn main() {
     let window = &window;
     let baker = ibl_filter::IBLFilter::new(&gpu);
 
-    let in_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_1k.rgbe.png").expect("Failed to load sky");
+    let in_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_2k.rgbe.png").expect("Failed to load sky");
     let in_view = in_tex.create_view(&Default::default());
     baker.bake_maps(&gpu, &in_view, "test");
 

@@ -61,7 +61,7 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     let look = normalize(look_dir);
     let v = 0.5 - atan2(look.z, length(look.xy)) / PI;
     let u = 0.5 - atan2(look.y, look.x) / (2*PI);
-    return textureSampleLevel(sky_tex, sky_sampler, vec2f(u, v), 0.0).xyz;
+    return textureSampleLevel(sky_tex, sky_sampler, vec2f(u, v), 0.0).xyz * 0.5;
 }
 
 @group(1) @binding(0) var dist_buf: texture_depth_2d;

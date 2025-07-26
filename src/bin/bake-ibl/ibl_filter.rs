@@ -9,8 +9,8 @@ pub struct IBLFilter {
     disp_pipeline: RenderPipeline,
     disp_bg: BindGroup,
     sampler: Sampler,
-    cube_tex: Texture,
-    cube_view: TextureView,
+    pub cube_tex: Texture,
+    pub cube_view: TextureView,
 
     spectrum_bg_layout: BindGroupLayout,
     spectrum_pipeline: ComputePipeline,
@@ -28,13 +28,21 @@ pub struct IBLFilter {
 
 
 impl IBLFilter {
-    const INPUT_HEIGHT: u32 = 512;
+    const INPUT_HEIGHT: u32 = 1024;
     const OUTPUT_LEVELS: u32 = 8;
     const FACE_SIZE: u32 = 1 << Self::OUTPUT_LEVELS;
     const IRRADIANCE_SIZE: u32 = 32;
     const FHT_IN_BUFFER_SIZE: u64 = (2*Self::INPUT_HEIGHT*Self::INPUT_HEIGHT*4*4) as u64;
     const FHT_OUT_BUFFER_SIZE: u64 = Self::FHT_IN_BUFFER_SIZE*(Self::OUTPUT_LEVELS as u64);
     const SPECTRUM_BUFFER_SIZE: u64 = (Self::INPUT_HEIGHT*Self::OUTPUT_LEVELS*4) as u64;
+
+    const COMP_OPTIONS: PipelineCompilationOptions<'static> = PipelineCompilationOptions {
+        constants: &[
+            ("HEIGHT", Self::INPUT_HEIGHT as f64),
+            ("LEVELS", Self::OUTPUT_LEVELS as f64),
+        ],
+        zero_initialize_workgroup_memory: true,
+    };
 
     pub fn new(gpu: &GPUContext) -> Self {
         let bake_shader = gpu.device.create_shader_module(ShaderModuleDescriptor{
@@ -100,6 +108,7 @@ impl IBLFilter {
             address_mode_v: AddressMode::MirrorRepeat,
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
+            mipmap_filter: FilterMode::Linear,
             ..Default::default()
         });
 
@@ -158,7 +167,7 @@ impl IBLFilter {
             layout: Some(&spectrum_layout),
             module: &bake_shader,
             entry_point: Some("get_kernel_spectra"),
-            compilation_options: Default::default(),
+            compilation_options: Self::COMP_OPTIONS,
             cache: None,
         });
 
@@ -203,7 +212,7 @@ impl IBLFilter {
             layout: Some(&fht1_layout),
             module: &bake_shader,
             entry_point: Some("horiz_fht_tex_to_buf"),
-            compilation_options: Default::default(),
+            compilation_options: Self::COMP_OPTIONS,
             cache: None,
         });
 
@@ -242,7 +251,7 @@ impl IBLFilter {
             layout: Some(&fht2_layout),
             module: &bake_shader,
             entry_point: Some("horiz_fht_buf_to_tex"),
-            compilation_options: Default::default(),
+            compilation_options: Self::COMP_OPTIONS,
             cache: None,
         });
 
@@ -291,7 +300,7 @@ impl IBLFilter {
             layout: Some(&blur_layout),
             module: &bake_shader,
             entry_point: Some("blur_spectra"),
-            compilation_options: Default::default(),
+            compilation_options: Self::COMP_OPTIONS,
             cache: None,
         });
 
@@ -336,7 +345,7 @@ impl IBLFilter {
             layout: Some(&cubify_layout),
             module: &bake_shader,
             entry_point: Some("cubify"),
-            compilation_options: Default::default(),
+            compilation_options: Self::COMP_OPTIONS,
             cache: None,
         });
 

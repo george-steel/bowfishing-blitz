@@ -4,9 +4,9 @@ const X = vec3f(1.0, 0.0, 0.0);
 const Y = vec3f(0.0, 1.0, 0.0);
 const Z = vec3f(0.0, 0.0, 1.0);
 
-const HEIGHT: u32 = 512;
-const WIDTH: u32 = HEIGHT * 2;
-const LEVELS: u32 = 8;
+override HEIGHT: u32 = 512;
+override WIDTH: u32 = HEIGHT * 2;
+override LEVELS: u32 = 8;
 
 alias comp_colors = mat2x3f;
 
@@ -144,7 +144,7 @@ fn enumerate_subgroups(sg_inv: u32) -> u32 {
     return subgroupBroadcastFirst(sgid);
 }
 
-const MAX_SG = HEIGHT / 32;
+override MAX_SG = HEIGHT / 32;
 var<workgroup> sum_buffer: array<vec3f, MAX_SG>;
 var<workgroup> sum_result: vec3f;
 
@@ -208,7 +208,7 @@ fn workgroupMulF32(sg_id: u32, sg_inv: u32, num_subgroups: u32, val: f32) -> f32
 @group(0) @binding(0) var<storage, read> spectrum_buf_in: array<f32>;
 @group(0) @binding(1) var<storage, read> raw_spectra_in: array<vec3f>;
 @group(0) @binding(2) var<storage, read_write> blurred_spectra_out: array<vec3f>;
-const BANDWIDTH: u32 = HEIGHT;
+override BANDWIDTH: u32 = 512;
 
 var<workgroup> twiddles: array<vec2f, BANDWIDTH>;
 var<private> px_out: array<vec3f, 16>;
@@ -287,7 +287,7 @@ var<private> px_out: array<vec3f, 16>;
 var<workgroup> spectrum: array<f32, BANDWIDTH>;
 const CONV_FAC = 4.0 * pow(PI, 1.5);
 
-@compute @workgroup_size(BANDWIDTH, 1, 1) fn get_kernel_spectra(
+@compute @workgroup_size(HEIGHT, 1, 1) fn get_kernel_spectra(
     @builtin(workgroup_id) wg_id: vec3u,
     @builtin(local_invocation_id) local_id: vec3u,
     @builtin(subgroup_size) sg_size: u32,
@@ -437,7 +437,7 @@ struct FQOut {
     let rho = cos(PI * v.xy.y / 2);
     let phi = - PI * v.xy.x;
     let dir = vec3f(rho * cos(phi), rho * sin(phi), z);
-    let raw = textureSampleLevel(blurred_tex_in, tex_in_samp, dir, 4.0).xyz;
+    let raw = textureSampleLevel(blurred_tex_in, tex_in_samp, dir, 0.0).xyz;
     let col = raw / 2;
     return vec4f(col, 1);
 }
