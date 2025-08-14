@@ -53,6 +53,8 @@ fn main() {
     let water_baker = water_filter::WaterFilter::new(&gpu);
     let dfg_baker = dfg_baker::DFGBaker::new(&gpu);
 
+    let test_cube = baker.make_test_cube(&gpu, 32);
+
     dfg_baker.integrate_dfg_lut(&gpu);
 
     /*/
@@ -101,7 +103,7 @@ fn main() {
                                 window.request_redraw();
                             }
                             Ok(frame) => {
-                                baker.render(&gpu, &frame.texture);
+                                baker.render(&gpu, &test_cube, &frame.texture);
                                 frame.present();
                                 window.request_redraw();
                             }

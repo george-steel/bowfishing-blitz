@@ -1,16 +1,17 @@
 use bowfishing_blitz::{gputil::mip::MipMaker, *};
+use glam::Vec4;
+use half::f16;
 use gputil::*;
 use rgbe::{RGBA16F, RGBE8};
 use std::{borrow::Cow, default, path::Path};
-use wgpu::*;
+use wgpu::{wgt::{TextureDescriptor, TextureViewDescriptor}, *};
 
 pub struct IBLFilter {
     bake_shader: ShaderModule,
+    disp_bg_layout: BindGroupLayout,
     disp_pipeline: RenderPipeline,
-    disp_bg: BindGroup,
-    sampler: Sampler,
-    pub cube_tex: Texture,
-    pub cube_view: TextureView,
+    main_sampler: Sampler,
+    cube_sampler: Sampler,
 
     spectrum_bg_layout: BindGroupLayout,
     spectrum_pipeline: ComputePipeline,
@@ -103,7 +104,7 @@ impl IBLFilter {
             cache: None
         });
 
-        let sampler = gpu.device.create_sampler(&SamplerDescriptor {
+        let main_sampler = gpu.device.create_sampler(&SamplerDescriptor {
             address_mode_u: AddressMode::Repeat,
             address_mode_v: AddressMode::MirrorRepeat,
             mag_filter: FilterMode::Linear,
@@ -112,32 +113,12 @@ impl IBLFilter {
             ..Default::default()
         });
 
-        let cube_tex = gpu.device.create_texture(&wgpu::TextureDescriptor{
-            label: Some("filtered_tex"),
-            size: Extent3d{width: Self::FACE_SIZE, height: Self::FACE_SIZE, depth_or_array_layers: 6},
-            format: TextureFormat::Rgba16Float,
-            mip_level_count: Self::OUTPUT_LEVELS, sample_count: 1, dimension: wgpu::TextureDimension::D2,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
-            view_formats: &[],
-        });
-        let cube_view = cube_tex.create_view(&TextureViewDescriptor {
-            dimension: Some(TextureViewDimension::Cube),
+        let cube_sampler = gpu.device.create_sampler(&SamplerDescriptor {
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: FilterMode::Linear,
+            anisotropy_clamp: 8,
             ..Default::default()
-        });
-
-        let disp_bg = gpu.device.create_bind_group(&BindGroupDescriptor{
-            label: Some("fht_bind"),
-            layout: &disp_bg_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(&cube_view),
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Sampler(&sampler),
-                },
-            ],
         });
 
         // processing pipelines
@@ -389,10 +370,11 @@ impl IBLFilter {
         });
 
         IBLFilter {
-            bake_shader, 
-            disp_pipeline, disp_bg,
-            sampler,
-            cube_tex, cube_view,
+            bake_shader,
+            disp_bg_layout,
+            disp_pipeline,
+            main_sampler,
+            cube_sampler,
 
             spectrum_bg_layout,
             spectrum_pipeline,
@@ -409,16 +391,34 @@ impl IBLFilter {
         }
     }
 
-    pub fn render(&self, gpu: &GPUContext, out: &wgpu::Texture) {
+    pub fn render(&self, gpu: &GPUContext, cube_tex: &wgpu::Texture, out: &wgpu::Texture) {
         let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: None,
         });
-        let view = out.create_view(&Default::default());
+        let out_view = out.create_view(&Default::default());
+        let cube_view = cube_tex.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::Cube),
+            ..Default::default()
+        });
+        let disp_bg = gpu.device.create_bind_group(&BindGroupDescriptor{
+            label: Some("fht_bind"),
+            layout: &self.disp_bg_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&cube_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&self.cube_sampler),
+                },
+            ],
+        });
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &out_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -430,9 +430,11 @@ impl IBLFilter {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+
+            
             
             rpass.set_pipeline(&self.disp_pipeline);
-            rpass.set_bind_group(0, &self.disp_bg, &[]);
+            rpass.set_bind_group(0, &disp_bg, &[]);
             rpass.draw(0..4, 0..1);
         }
         gpu.queue.submit([encoder.finish()]);
@@ -467,6 +469,15 @@ impl IBLFilter {
             view_formats: &[],
         });
         let filtered_view = filtered_tex.create_view(&Default::default());
+
+        let radiance_cube_tex = gpu.device.create_texture(&wgpu::TextureDescriptor{
+            label: Some("filtered_tex"),
+            size: Extent3d{width: Self::FACE_SIZE, height: Self::FACE_SIZE, depth_or_array_layers: 6},
+            format: TextureFormat::Rgba16Float,
+            mip_level_count: Self::OUTPUT_LEVELS, sample_count: 1, dimension: wgpu::TextureDimension::D2,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING,
+            view_formats: &[],
+        });
 
         let mut radiance_buf_size = 0;
         let mut face_size = Self::FACE_SIZE;
@@ -519,7 +530,7 @@ impl IBLFilter {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: BindingResource::Sampler(&self.sampler),
+                    resource: BindingResource::Sampler(&self.main_sampler),
                 },
                 BindGroupEntry {
                     binding: 2,
@@ -601,7 +612,7 @@ impl IBLFilter {
                     array_layer_count: Some(1),
                     ..Default::default()
                 });
-                let out_view = self.cube_tex.create_view(&TextureViewDescriptor {
+                let out_view = radiance_cube_tex.create_view(&TextureViewDescriptor {
                     dimension: Some(TextureViewDimension::D2Array),
                     base_mip_level: mip,
                     mip_level_count: Some(1),
@@ -617,7 +628,7 @@ impl IBLFilter {
                         },
                         BindGroupEntry {
                             binding: 1,
-                            resource: BindingResource::Sampler(&self.sampler),
+                            resource: BindingResource::Sampler(&self.main_sampler),
                         },
                         BindGroupEntry {
                             binding: 2,
@@ -650,7 +661,7 @@ impl IBLFilter {
                         },
                         BindGroupEntry {
                             binding: 1,
-                            resource: BindingResource::Sampler(&self.sampler),
+                            resource: BindingResource::Sampler(&self.main_sampler),
                         },
                         BindGroupEntry {
                             binding: 2,
@@ -675,7 +686,7 @@ impl IBLFilter {
                 entries: &[
                     BindGroupEntry {
                         binding: 0,
-                        resource: BindingResource::TextureView(&self.cube_tex.create_view(&Default::default())),
+                        resource: BindingResource::TextureView(&radiance_cube_tex.create_view(&Default::default())),
                     },
                     BindGroupEntry {
                         binding: 1,
@@ -787,7 +798,7 @@ impl IBLFilter {
                     },
                     BindGroupEntry {
                         binding: 1,
-                        resource: BindingResource::Sampler(&self.sampler),
+                        resource: BindingResource::Sampler(&self.main_sampler),
                     },
                     BindGroupEntry {
                         binding: 2,
@@ -842,5 +853,83 @@ impl IBLFilter {
 
         cube_tex.destroy();
         cube_out_buf.destroy();
+    }
+
+    pub fn make_test_cube(&self, gpu: &GPUContext, size: u32) -> Texture {
+        let rgb: [u8; 12] = [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255];
+
+        let in_tex = gpu.device.create_texture(&TextureDescriptor{
+            label: Some("test_tex"),
+            size: Extent3d { width: 1, height: 1, depth_or_array_layers: 3 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8UnormSrgb,
+            usage: TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        gpu.queue.write_texture(
+            TexelCopyTextureInfo{texture: &in_tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
+            &rgb[..],
+            TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: Some(1) },
+            Extent3d { width: 1, height: 1, depth_or_array_layers: 3 },
+        );
+
+        let out_tex = gpu.device.create_texture(&TextureDescriptor{
+            label: Some("test_tex"),
+            size: Extent3d { width: size, height: size, depth_or_array_layers: 6 },
+            mip_level_count: 3,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba16Float,
+            usage: TextureUsages::COPY_SRC | TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        let mut encoder = gpu.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor { label: Some("cubify_pass"), timestamp_writes: None });
+            pass.set_pipeline(&self.cubify_pipeline);
+
+            for mip in 0..3 {
+                let wgdim = ((size >> mip) /8).max(1);
+                let in_view = in_tex.create_view(&TextureViewDescriptor {
+                    dimension: Some(TextureViewDimension::D2),
+                    base_array_layer: mip,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                });
+                let out_view = out_tex.create_view(&TextureViewDescriptor {
+                    dimension: Some(TextureViewDimension::D2Array),
+                    base_mip_level: mip,
+                    mip_level_count: Some(1),
+                    ..Default::default()
+                });
+                let bg = gpu.device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("cubify_bg"),
+                    layout: &self.cubify_bg_layout,
+                    entries: &[
+                        BindGroupEntry {
+                            binding: 0,
+                            resource: BindingResource::TextureView(&in_view),
+                        },
+                        BindGroupEntry {
+                            binding: 1,
+                            resource: BindingResource::Sampler(&self.main_sampler),
+                        },
+                        BindGroupEntry {
+                            binding: 2,
+                            resource: BindingResource::TextureView(&out_view),
+                        },
+                    ],
+                });
+                pass.set_bind_group(0, &bg, &[]);
+                pass.dispatch_workgroups(wgdim, wgdim, 6);
+            }
+        }
+
+        gpu.queue.submit([encoder.finish()]);
+
+        out_tex
     }
 }
