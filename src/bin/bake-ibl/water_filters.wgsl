@@ -68,7 +68,7 @@ const LIMIT_COLOR = vec4f(0.03, 0.05, 0.1, 1.0);
     let theta = v.xy.y * PI / 2;
 
     var px_in = textureSampleLevel(sky_in, trilinear, v.uv, 0.0);
-    let falloff = 0.9 * exp(0.3 * (-1 / abs(sin(theta)) + 1)) + 0.1;
+    let falloff = 0.85 * exp(0.3 * (-1 / abs(sin(theta)) + 1)) + 0.15;
     //let falloff = abs(sin(theta));
 
     let bright = dot(px_in, vec4f(1, 1, 1, 0));

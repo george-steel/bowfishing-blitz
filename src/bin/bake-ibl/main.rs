@@ -5,6 +5,7 @@ use wgpu::Features;
 
 mod ibl_filter;
 mod water_filter;
+mod dfg_baker;
 
 use std::time::Instant;
 
@@ -31,7 +32,7 @@ fn main() {
     let gpu = pollster::block_on(GPUContext::with_limits(
         wgpu_inst,
         Some(&surface),
-        Features::SUBGROUP | Features::MAPPABLE_PRIMARY_BUFFERS,
+        Features::SUBGROUP | Features::MAPPABLE_PRIMARY_BUFFERS | Features::TEXTURE_FORMAT_16BIT_NORM | Features::TEXTURE_ADAPTER_SPECIFIC_FORMAT_FEATURES,
         wgpu::Limits {
             max_compute_workgroup_size_x: 512,
             max_compute_invocations_per_workgroup: 512,
@@ -50,7 +51,11 @@ fn main() {
     let window = &window;
     let baker = ibl_filter::IBLFilter::new(&gpu);
     let water_baker = water_filter::WaterFilter::new(&gpu);
+    let dfg_baker = dfg_baker::DFGBaker::new(&gpu);
 
+    dfg_baker.integrate_dfg_lut(&gpu);
+
+    /*/
     let raw_sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_2k.rgbe.png").expect("Failed to load sky");
     let raw_sky_view = raw_sky_tex.create_view(&Default::default());
     baker.bake_maps(&gpu, &raw_sky_view, None);
@@ -70,6 +75,8 @@ fn main() {
     //let sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_puresky_2k.rgbe.png").expect("Failed to load sky");
     //let sky_view = sky_tex.create_view(&Default::default());
     //baker.bake_cube(&gpu, &sky_view, "skybox", 512);
+
+    */
 
     event_loop
         .run(move |event, target| {
