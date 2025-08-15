@@ -74,9 +74,9 @@ fn main() {
     let below_view = below_tex.create_view(&Default::default());
     let (below_cube, _) = baker.bake_maps(&gpu, &below_view, Some("below"));
 
-    //let sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_puresky_2k.rgbe.png").expect("Failed to load sky");
-    //let sky_view = sky_tex.create_view(&Default::default());
-    //baker.bake_cube(&gpu, &sky_view, "skybox", 512);
+    let sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_puresky_2k.rgbe.png").expect("Failed to load sky");
+    let sky_view = sky_tex.create_view(&Default::default());
+    baker.bake_cube(&gpu, &sky_view, "skybox", 512);
 
     event_loop
         .run(move |event, target| {
