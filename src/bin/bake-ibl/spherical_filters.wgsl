@@ -437,12 +437,13 @@ struct FQOut {
     let rho = cos(PI * v.xy.y / 2);
     let phi = - PI * v.xy.x;
     let dir = normalize(vec3f(rho * cos(phi), rho * sin(phi), z));
-    let tan = normalize(vec3f(-sin(phi), cos(phi), 0));
-    let bitan = normalize(vec3f(z * cos(phi), z * sin(phi), -rho));
-    let d_corr = max(abs(dir.x), max(abs(dir.y), abs(dir.z)));
-    let raw = textureSampleGrad(blurred_tex_in, tex_in_samp, dir, -tan * d_corr* d_corr / 32 + dir, -bitan * d_corr * d_corr / 8 + dir).xyz;
 
-    //let raw = textureSampleBias(blurred_tex_in, tex_in_samp, dir, 4.0).xyz;
+    //let tan = normalize(vec3f(-sin(phi), cos(phi), 0));
+    //let bitan = normalize(vec3f(z * cos(phi), z * sin(phi), -rho));
+    //let d_corr = max(abs(dir.x), max(abs(dir.y), abs(dir.z)));
+    //let raw = textureSampleGrad(blurred_tex_in, tex_in_samp, dir, -tan * d_corr* d_corr / 32 + dir, -bitan * d_corr * d_corr / 8 + dir).xyz;
+
+    let raw = textureSampleLevel(blurred_tex_in, tex_in_samp, dir, 0.0).xyz;
     let col = raw / 2;
     return vec4f(col, 1);
 }

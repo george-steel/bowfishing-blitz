@@ -1,7 +1,7 @@
 use bowfishing_blitz::*;
 use gputil::*;
 use camera::*;
-use wgpu::Features;
+use wgpu::{wgt::TextureViewDescriptor, Features, TextureViewDimension};
 
 mod spherical_filter;
 mod water_filter;
@@ -39,6 +39,7 @@ fn main() {
             max_compute_workgroup_storage_size: 65536,
             max_buffer_size: 512 * 1024 * 1024,
             max_storage_buffer_binding_size: 512 * 1024 * 1024,
+            max_color_attachment_bytes_per_sample: 40,
             ..Default::default()
         },
     ));
@@ -53,32 +54,29 @@ fn main() {
     let water_baker = water_filter::WaterFilter::new(&gpu);
     let dfg_baker = integral_filter::DFGBaker::new(&gpu);
 
-    let test_cube = baker.make_test_cube(&gpu, 32);
+    //let test_cube = baker.make_test_cube(&gpu, 32);
 
-    dfg_baker.integrate_dfg_lut(&gpu);
+    let dfg_tables = dfg_baker.integrate_dfg_lut(&gpu);
 
-    /*/
     let raw_sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_2k.rgbe.png").expect("Failed to load sky");
     let raw_sky_view = raw_sky_tex.create_view(&Default::default());
-    baker.bake_maps(&gpu, &raw_sky_view, None);
-
-    let above_tex = water_baker.render_above(&gpu, &raw_sky_view, &baker.cube_view);
-    let above_view = above_tex.create_view(&Default::default());
-    baker.bake_maps(&gpu, &above_view, Some("above"));
 
     let clamped_tex = water_baker.render_clamp(&gpu, &raw_sky_view);
     let clamped_view = clamped_tex.create_view(&Default::default());
-    baker.bake_maps(&gpu, &clamped_view, None);
+    let (clamped_cube, _) = baker.bake_maps(&gpu, &clamped_view, None);
+    let clamped_cube_view = clamped_cube.create_view(&TextureViewDescriptor{dimension: Some(TextureViewDimension::Cube), ..Default::default()});
 
-    let below_tex = water_baker.render_below(&gpu, &raw_sky_view, &baker.cube_view);
+    let above_tex = water_baker.render_above(&gpu, &dfg_tables, &raw_sky_view, &clamped_cube_view);
+    let above_view = above_tex.create_view(&Default::default());
+    let (above_cube, _) = baker.bake_maps(&gpu, &above_view, Some("above"));
+
+    let below_tex = water_baker.render_below(&gpu, &dfg_tables, &raw_sky_view, &clamped_cube_view);
     let below_view = below_tex.create_view(&Default::default());
-    baker.bake_maps(&gpu, &below_view, Some("below"));
+    let (below_cube, _) = baker.bake_maps(&gpu, &below_view, Some("below"));
 
     //let sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_puresky_2k.rgbe.png").expect("Failed to load sky");
     //let sky_view = sky_tex.create_view(&Default::default());
     //baker.bake_cube(&gpu, &sky_view, "skybox", 512);
-
-    */
 
     event_loop
         .run(move |event, target| {
@@ -103,7 +101,7 @@ fn main() {
                                 window.request_redraw();
                             }
                             Ok(frame) => {
-                                baker.render(&gpu, &test_cube, &frame.texture);
+                                baker.render(&gpu, &below_cube, &frame.texture);
                                 frame.present();
                                 window.request_redraw();
                             }

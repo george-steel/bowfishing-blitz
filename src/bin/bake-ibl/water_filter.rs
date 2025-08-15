@@ -3,6 +3,8 @@ use gputil::*;
 use std::{borrow::Cow, default};
 use wgpu::{wgt::TextureDescriptor, *};
 
+use crate::integral_filter::{DFGBaker, DFGTables};
+
 pub struct WaterFilter {
     shaders: ShaderModule,
     sampler: Sampler,
@@ -16,7 +18,7 @@ pub struct WaterFilter {
 
 impl WaterFilter {
     const COMP_OPTIONS: PipelineCompilationOptions<'static> = PipelineCompilationOptions {
-        constants: &[],
+        constants: &[("LIN_CORRECTION", DFGBaker::LIN_CORRECTION)],
         zero_initialize_workgroup_memory: true,
     };
 
@@ -53,6 +55,42 @@ impl WaterFilter {
                         view_dimension: TextureViewDimension::Cube,
                         multisampled: false
                     },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2Array,
+                        multisampled: false
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -181,7 +219,7 @@ impl WaterFilter {
         }
     }
 
-    pub fn render_above(&self, gpu: &GPUContext, raw_sky: &TextureView, filt_sky: &TextureView) -> Texture {
+    pub fn render_above(&self, gpu: &GPUContext, dfg_tables: &DFGTables, raw_sky: &TextureView, filt_sky: &TextureView) -> Texture {
         let dims = raw_sky.texture().size();
         let out_tex = gpu.device.create_texture(&TextureDescriptor{
             label: Some("above_tex"),
@@ -207,6 +245,22 @@ impl WaterFilter {
                 BindGroupEntry {
                     binding: 2,
                     resource: BindingResource::TextureView(&filt_sky),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&dfg_tables.dfg.create_view(&Default::default())),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(&dfg_tables.trans_dfg.create_view(&Default::default())),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&dfg_tables.dirs.create_view(&Default::default())),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::Sampler(&dfg_tables.sampler),
                 },
             ],
         });
@@ -241,7 +295,7 @@ impl WaterFilter {
         out_tex
     }
 
-    pub fn render_below(&self, gpu: &GPUContext, raw_sky: &TextureView, filt_sky: &TextureView) -> Texture {
+    pub fn render_below(&self, gpu: &GPUContext, dfg_tables: &DFGTables, raw_sky: &TextureView, filt_sky: &TextureView) -> Texture {
         let dims = raw_sky.texture().size();
         let out_tex = gpu.device.create_texture(&TextureDescriptor{
             label: Some("below_tex"),
@@ -267,6 +321,22 @@ impl WaterFilter {
                 BindGroupEntry {
                     binding: 2,
                     resource: BindingResource::TextureView(&filt_sky),
+                },
+                BindGroupEntry {
+                    binding: 3,
+                    resource: BindingResource::TextureView(&dfg_tables.dfg.create_view(&Default::default())),
+                },
+                BindGroupEntry {
+                    binding: 4,
+                    resource: BindingResource::TextureView(&dfg_tables.trans_dfg.create_view(&Default::default())),
+                },
+                BindGroupEntry {
+                    binding: 5,
+                    resource: BindingResource::TextureView(&dfg_tables.dirs.create_view(&Default::default())),
+                },
+                BindGroupEntry {
+                    binding: 6,
+                    resource: BindingResource::Sampler(&dfg_tables.sampler),
                 },
             ],
         });

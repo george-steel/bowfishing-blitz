@@ -83,18 +83,22 @@ struct DFGOut {
 
         if l_in.z < 0 {
             let nl2 = l_in.z * l_in.z;
+            let lh = abs(dot(l_in, h));
             let shad_l = (-1 + sqrt(alpha2 * (1 - nl2) / nl2 + 1)) * 0.5;
             let shad = 1 / (1 + shad_l + shad_v);
-            let gvis = shad * vh / (h.z * nv);
+            let denom = lh + 0.75 * vh;
+            let gvis = shad * vh * vh * lh * 4 / (denom * denom  * h.z * nv);
             let contrib = mix(0.98, 0.0, shlick) * gvis;
             slice_trans.x += contrib;
         }
 
-        if l_in.z < 0 {
+        if l_out.z < 0 {
             let nl2 = l_out.z * l_out.z;
+            let lh = abs(dot(l_out, h));
             let shad_l = (-1 + sqrt(alpha2 * (1 - nl2) / nl2 + 1)) * 0.5;
             let shad = 1 / (1 + shad_l + shad_v);
-            let gvis = shad * vh / (h.z * nv);
+            let denom = lh + 1.33 * vh;
+            let gvis = shad * vh * vh * lh * 4 / (denom * denom  * h.z * nv);
             let contrib = mix(0.98, 0.0, shlick_out) * gvis;
             slice_trans.y += contrib;
         }
@@ -104,10 +108,14 @@ struct DFGOut {
     total_trans += slice_trans;
 
     var out: DFGOut;
-    out.spec = vec4f(total_spec / f32(SAMPLES), 1.0);
-    out.trans = vec4f(total_trans / f32(SAMPLES), 0.0, 1.0);
+    out.spec = vec4f(total_spec.xy / f32(SAMPLES), 0.0, 1.0);
+    out.trans = vec4f(total_trans / f32(SAMPLES), total_spec.z / f32(SAMPLES), 1.0);
 
     return out;
+}
+
+fn unmix_x(theta: f32, exp: f32) -> f32 {
+    return 0.5 * (1.0 + tan(theta - exp / 2) / tan(exp / 2));
 }
 
 override LIN_CORRECTION: f32 = 1.0;
@@ -117,6 +125,7 @@ struct DirsOut {
     @location(1) dir_metal: vec4f,
     @location(2) dir_in: vec4f,
     @location(3) dir_out: vec4f,
+    @location(4) dir_tir: vec4f,
 }
 
 @fragment fn integrate_Dirs_LUT(vert_in: FQOut) -> DirsOut {
@@ -135,12 +144,15 @@ struct DirsOut {
     var total_dist_metal = vec4f(0.0);
     var total_dist_in = vec4f(0.0);
     var total_dist_out = vec4f(0.0);
+    var total_dist_tir = vec4f(0.0);
 
     var slice_nvar = vec2f(0.0);
     var slice_dist_ins = vec4f(0.0);
     var slice_dist_metal = vec4f(0.0);
     var slice_dist_in = vec4f(0.0);
     var slice_dist_out = vec4f(0.0);
+    var slice_dist_tir = vec4f(0.0);
+
 
     for (var i = 0u; i < SAMPLES; i += 1) {
         if i % ACCUM_SIZE == 0 {
@@ -149,12 +161,14 @@ struct DirsOut {
             total_dist_metal += slice_dist_metal;
             total_dist_in += slice_dist_in;
             total_dist_out += slice_dist_out;
+            total_dist_tir += slice_dist_tir;
             
             slice_nvar = vec2f(0.0);
             slice_dist_ins = vec4f(0.0);
             slice_dist_metal = vec4f(0.0);
             slice_dist_in = vec4f(0.0);
             slice_dist_out = vec4f(0.0);
+            slice_dist_tir = vec4f(0.0);
         }
 
         let xi2 = 1 - (0.5 + f32(i)) / f32(SAMPLES);
@@ -186,7 +200,7 @@ struct DirsOut {
             let shad_l = (-1 + sqrt(alpha2 * (1 - nl2) / nl2 + 1)) * 0.5;
             let shad = 1 / (1 + shad_l + shad_v);
             let gvis = shad * vh / (h.z * nv);
-            let contrib = vec2f(1-shlick, shlick) * gvis;
+            let contrib = vec3f(1-shlick, shlick, mix(0.02, 1.0, shlick_out)) * gvis;
             
             let tx = -atan2(l.x, l.z);
             let dtx = mx - tx;
@@ -195,12 +209,15 @@ struct DirsOut {
             let mcontrib = vec2f(0.04, 0.8) * contrib.x + contrib.y;
             slice_dist_ins += vec4f(moments, 1.0) * mcontrib.x;
             slice_dist_metal += vec4f(moments, 1.0) * mcontrib.y;
+            slice_dist_tir += vec4f(moments, 1.0) * contrib.z;
         }
         if l_in.z < 0 {
             let nl2 = l_in.z * l_in.z;
+            let lh = abs(dot(l_in, h));
             let shad_l = (-1 + sqrt(alpha2 * (1 - nl2) / nl2 + 1)) * 0.5;
             let shad = 1 / (1 + shad_l + shad_v);
-            let gvis = shad * vh / (h.z * nv);
+            let denom = lh + 0.75 * vh;
+            let gvis = shad * vh * vh * lh * 4 / (denom * denom  * h.z * nv);
             let contrib = mix(0.98, 0.0, shlick) * gvis;
             
             let tx = -atan2(l_in.x, -l_in.z);
@@ -211,9 +228,11 @@ struct DirsOut {
         }
         if l_out.z < 0 {
             let nl2 = l_out.z * l_out.z;
+            let lh = abs(dot(l_out, h));
             let shad_l = (-1 + sqrt(alpha2 * (1 - nl2) / nl2 + 1)) * 0.5;
             let shad = 1 / (1 + shad_l + shad_v);
-            let gvis = shad * vh / (h.z * nv);
+            let denom = lh + 1.33 * vh;
+            let gvis = shad * vh * vh * lh * 4 / (denom * denom  * h.z * nv);
             let contrib = mix(0.98, 0.0, shlick_out) * gvis;
             
             let tx = -atan2(l_out.x, -l_out.z);
@@ -236,6 +255,7 @@ struct DirsOut {
     total_dist_metal += slice_dist_metal;
     total_dist_in += slice_dist_in;
     total_dist_out += slice_dist_out;
+    total_dist_tir += slice_dist_tir;
 
     let exp_dl = sqrt(total_nvar.x / total_nvar.y);
     let exc = exp_dl * LIN_CORRECTION;
@@ -243,17 +263,20 @@ struct DirsOut {
     var out: DirsOut;
     let ins_moments = total_dist_ins.xyz / total_dist_ins.w;
     let ins_dx = mx - ins_moments.x;
-    out.dir_ins = vec4f(inv_corr * ins_moments.x / mx, sqrt(ins_moments.y - ins_dx * ins_dx) / exc, sqrt(ins_moments.z) / exc, 1.0);
+    out.dir_ins = max(vec4f(0.0), vec4f(inv_corr * unmix_x(ins_moments.x, mx), sqrt(ins_moments.y - ins_dx * ins_dx) / exc, sqrt(ins_moments.z) / exc, 1.0));
     let metal_moments = total_dist_metal.xyz / total_dist_metal.w;
     let metal_dx = mx - metal_moments.x;
-    out.dir_metal = vec4f(inv_corr * metal_moments.x / mx, sqrt(metal_moments.y - metal_dx * metal_dx) / exc, sqrt(metal_moments.z) / exc, 1.0);
+    out.dir_metal = max(vec4f(0.0), vec4f(inv_corr * unmix_x(metal_moments.x, mx), sqrt(metal_moments.y - metal_dx * metal_dx) / exc, sqrt(metal_moments.z) / exc, 1.0));
 
     let in_moments = total_dist_in.xyz / total_dist_in.w;
     let in_dx = mx - in_moments.x;
-    out.dir_in = vec4f(inv_corr * in_moments.x / mx, sqrt(in_moments.y - in_dx * in_dx) / exc, sqrt(in_moments.z) / exc, 1.0);
+    out.dir_in = max(vec4f(0.0), vec4f(inv_corr * unmix_x(in_moments.x, mx), sqrt(in_moments.y - in_dx * in_dx) / exc, sqrt(in_moments.z) / exc, 1.0));
     let out_moments = total_dist_out.xyz / total_dist_out.w;
     let out_dx = mx - out_moments.x;
-    out.dir_out = vec4f(inv_corr * out_moments.x / mx, sqrt(out_moments.y - out_dx * out_dx) / exc, sqrt(out_moments.z) / exc, 1.0);
+    out.dir_out = max(vec4f(0.0), vec4f(inv_corr * unmix_x(out_moments.x, mx), sqrt(out_moments.y - out_dx * out_dx) / exc, sqrt(out_moments.z) / exc, 1.0));
+    let tir_moments = total_dist_tir.xyz / total_dist_tir.w;
+    let tir_dx = mx - tir_moments.x;
+    out.dir_tir = max(vec4f(0.0), vec4f(inv_corr * unmix_x(tir_moments.x, mx), sqrt(tir_moments.y - tir_dx * tir_dx) / exc, sqrt(tir_moments.z) / exc, 1.0));
 
     return out;
 }

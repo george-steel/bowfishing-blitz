@@ -1,5 +1,8 @@
 const TAU = 6.2831853072;
 const PI  = 3.1415926535;
+const X = vec3f(1.0, 0.0, 0.0);
+const Y = vec3f(0.0, 1.0, 0.0);
+const Z = vec3f(0.0, 0.0, 1.0);
 
 struct FQOut {
     @builtin(position) pos: vec4f,
@@ -17,28 +20,30 @@ struct FQOut {
     return out;
 }
 
-const MAX_CUBE_ANISO: u32 = 8;
-fn sampleCubeAniso(radiance: texture_cube<f32>, samp: sampler, dir: vec3f, major_axis: vec3f, alpha_along: f32, alpha_cross: f32) -> vec4f {
+const MAX_CUBE_ANISO: u32 = 12;
+fn sampleCubeAniso(radiance: texture_cube<f32>, samp: sampler, dir: vec3f, major_axis: vec3f, alphas: vec2f) -> vec4f {
     let total_mips = textureNumLevels(radiance);
 
-    var alpha_hi = alpha_along;
-    var alpha_lo = alpha_cross;
-    if alpha_cross > alpha_along {
-        alpha_hi = alpha_cross;
-        alpha_lo = alpha_along;
+    var hi_axis = major_axis;
+    var alpha_hi = alphas.x;
+    var alpha_lo = alphas.y;
+    if alphas.y > alphas.x {
+        alpha_hi = alphas.y;
+        alpha_lo = alphas.x;
+        hi_axis = cross(major_axis, dir);
     }
-    alpha_hi = max(alpha_hi, 0.001);
-    alpha_lo = max(alpha_lo, alpha_hi / f32(MAX_CUBE_ANISO));
+    alpha_hi = max(alpha_hi, 0.002);
+    alpha_lo = max(max(alpha_lo, 0.002), alpha_hi / f32(MAX_CUBE_ANISO));
 
     let eccentricity = alpha_hi / alpha_lo;
-    let n_samples = u32(round(eccentricity)) + 1;
+    let n_samples = 2 * u32(round(eccentricity)) + 1;
 
-    let mip = max(0.0, f32(total_mips) + log2(alpha_lo));
+    let mip = max(0.0, f32(total_mips) - 1 + log2(alpha_lo));
 
     let ndir = normalize(dir);
-    let adir = normalize(major_axis - dot(major_axis, ndir) * ndir);
+    let adir = normalize(hi_axis - dot(hi_axis, ndir) * ndir);
 
-    let samp_rad = 2 * alpha_hi * (eccentricity - 1);
+    let samp_rad = 4 * alpha_hi * (eccentricity - 1);
 
     var total_tex = vec4f(0);
     var total_weight = 0u;
@@ -57,14 +62,32 @@ fn sampleCubeAniso(radiance: texture_cube<f32>, samp: sampler, dir: vec3f, major
     return total_tex / f32(total_weight);
 }
 
+// adapted from Learn OpenGL
+fn dist_GGX(nh: f32, alpha: f32) -> f32 {
+    let a2 = alpha * alpha;
+    let nhc = max(0.0, nh);
+    let nh2 = nhc * nhc;
+    let denom = nh2 * (a2 - 1.0) + 1.0;
+    return a2 / (denom * denom);
+}
+
 override U_AT_PLUSX: f32 = 0.5;
 override WATER_STRENGTH: f32 = 0.6;
-override WATER_ROUGH: f32 = 0.25;
+override WATER_ROUGH: f32 = 0.2;
 override MAX_BRIGHT_PX: f32 = 3.0;
+
+const SUN_COLOR = 2 * vec3f(0.98, 0.99, 0.90);
+const SUN_DIR = vec3f(0.548, -0.380, 0.745);
 
 @group(0) @binding(0) var trilinear: sampler;
 @group(0) @binding(1) var sky_in: texture_2d<f32>;
 @group(0) @binding(2) var sky_filt: texture_cube<f32>;
+@group(0) @binding(3) var dfg_refl: texture_2d<f32>;
+@group(0) @binding(4) var dfg_trans: texture_2d<f32>;
+@group(0) @binding(5) var dfg_dirs: texture_2d_array<f32>;
+@group(0) @binding(6) var lut_sampler: sampler;
+
+override LIN_CORRECTION: f32 = 1.0;
 
 @fragment fn above_water_equi(v: FQOut) -> @location(0) vec4f {
     let max_cube_mip = f32(textureNumLevels(sky_filt) - 1);
@@ -85,30 +108,53 @@ override MAX_BRIGHT_PX: f32 = 3.0;
     let z = sin(theta);
     let rho = cos(theta);
     let dir = vec3f(rho * cos(phi), rho * sin(phi), z);
+    let mirror_dir = vec3f(dir.xy, -dir.z);
+    let alpha = WATER_ROUGH * WATER_ROUGH;
 
-    let refr_dir = normalize(refract(dir, vec3f(0.0, 0.0, 1.0), 0.75));
-    let refl_dir = normalize(vec3f(dir.xy, -dir.z));
+    let dfg_uv = vec2f(sqrt(abs(dir.z)), WATER_ROUGH);
+    let dfg_vals = textureSampleLevel(dfg_refl, lut_sampler, dfg_uv, 0.0);
+    let trans_vals = textureSampleLevel(dfg_trans, lut_sampler, dfg_uv, 0.0);
+    let dirs_refl = textureSampleLevel(dfg_dirs, lut_sampler, dfg_uv, 0, 0.0);
+    let dirs_trans = textureSampleLevel(dfg_dirs, lut_sampler, dfg_uv, 2, 0.0);
 
-    let rough = WATER_ROUGH * abs(dir.z);
+    let refl_dir = mix(Z, mirror_dir, dirs_refl.x * LIN_CORRECTION);
+    let refl_alphas = alpha * dirs_refl.yz * LIN_CORRECTION;
+    let refl_fac = 0.02 * dfg_vals.x + dfg_vals.y;
+    let refl_col = sampleCubeAniso(sky_filt, trilinear, refl_dir, Z, refl_alphas).xyz;
 
-    let shlick = pow(saturate(1.0 - abs(dir.z)), 5.0);
-    let ks = mix(0.02, 1.0, shlick);
+    let trans_dir = mix(-Z, dir, dirs_trans.x * LIN_CORRECTION);
+    let trans_alphas = alpha * dirs_trans.yz * LIN_CORRECTION;
+    let trans_fac = trans_vals.x;
+    let trans_col = sampleCubeAniso(sky_filt, trilinear, trans_dir, Z, trans_alphas).xyz;
 
-    let refr_col = textureSampleLevel(sky_filt, trilinear, refr_dir, max(0.0, max_cube_mip + 2 * log2(rough)));
-    let refl_col = textureSampleLevel(sky_filt, trilinear, refl_dir, max(0.0, max_cube_mip + 2 * log2(rough)));
+    let l = normalize(SUN_DIR);
+    let h = normalize(l - dir);
+    let vh = saturate(dot(-dir, h));
+    let ks = mix(0.02, 1.0, pow(1 - vh, 5.0));
+    let ndf = dist_GGX(h.z, alpha);
+    let nv2 = z * z;
+    let nl2 = l.z * l.z;
+    let alpha2 = alpha * alpha;
+    let shad_v = (-1 + sqrt(alpha2 * (1 - nv2) / nv2 + 1)) * 0.5;
+    let shad_l = (-1 + sqrt(alpha2 * (1 - nl2) / nl2 + 1)) * 0.5;
+    let shad = 1 / (1 + shad_l + shad_v);
+    let spec_fac = ks * ndf * shad / ((4.0 * (-dir.z)) + 0.0001);
 
-    let water_col = mix(refr_col, refl_col, ks);
-    return mix(px_in, water_col, WATER_STRENGTH);
+    //return vec4f(spec_fac);
+    //return refl_fac * refl_col;
+    //return trans_fac * trans_col;
+    let water_col = refl_fac * refl_col + trans_fac * trans_col + spec_fac * SUN_COLOR;
+    return vec4f(water_col, 1.0);
 }
 
 const LIMIT_COLOR = vec4f(0.03, 0.05, 0.1, 1.0);
 
 @fragment fn below_water_equi(v: FQOut) -> @location(0) vec4f {
     let max_cube_mip = f32(textureNumLevels(sky_filt) - 1);
-    let theta = v.xy.y * PI / 2;
 
     var px_in = textureSampleLevel(sky_in, trilinear, v.uv, 0.0);
-    let falloff = 0.85 * exp(0.3 * (-1 / abs(sin(theta)) + 1)) + 0.15;
+    let theta = v.xy.y * PI / 2;
+    let falloff = 0.9 * exp(0.3 * (-1 / abs(sin(theta)) + 1)) + 0.1;
     //let falloff = abs(sin(theta));
 
     let bright = dot(px_in, vec4f(1, 1, 1, 0));
@@ -124,27 +170,27 @@ const LIMIT_COLOR = vec4f(0.03, 0.05, 0.1, 1.0);
     let z = sin(theta);
     let rho = cos(theta);
     let dir = vec3f(rho * cos(phi), rho * sin(phi), z);
+    let mirror_dir = vec3f(dir.xy, -dir.z);
+    let alpha = WATER_ROUGH * WATER_ROUGH;
 
-    let refr_dir = normalize(refract(dir, vec3f(0.0, 0.0, -1.0), 1.33));
-    let refl_dir = normalize(vec3f(dir.xy, -dir.z));
+    let dfg_uv = vec2f(sqrt(abs(dir.z)), WATER_ROUGH);
+    let trans_vals = textureSampleLevel(dfg_trans, lut_sampler, dfg_uv, 0.0);
+    let dirs_refl = textureSampleLevel(dfg_dirs, lut_sampler, dfg_uv, 4, 0.0);
+    let dirs_trans = textureSampleLevel(dfg_dirs, lut_sampler, dfg_uv, 3, 0.0);
 
-    let refr_rough = WATER_ROUGH * abs(refr_dir.z);
-    let refl_rough = WATER_ROUGH * abs(refl_dir.z);
+    let refl_dir = mix(-Z, mirror_dir, dirs_refl.x * LIN_CORRECTION);
+    let refl_alphas = alpha * min(vec2f(1.0), dirs_refl.yz * LIN_CORRECTION);
+    let refl_fac = trans_vals.z;
+    let refl_col = sampleCubeAniso(sky_filt, trilinear, refl_dir, Z, refl_alphas).xyz;
 
-    let shlick = pow(saturate(1.0 - abs(refr_dir.z)), 5.0);
-    //let shlick = saturate(1.0 - abs(refr_dir.z));
-    let ks = mix(mix(0.02, 1.0, shlick), 1.0, smoothstep(0.2, 0.0, refr_dir.z));
+    let trans_dir = mix(Z, dir, dirs_trans.x * LIN_CORRECTION);
+    let trans_alphas = alpha * dirs_trans.yz * LIN_CORRECTION;
+    let trans_fac = trans_vals.y;
+    let trans_col = sampleCubeAniso(sky_filt, trilinear, trans_dir, Z, trans_alphas).xyz;
 
-    let refl_col = textureSampleLevel(sky_filt, trilinear, refl_dir, max(0.0, max_cube_mip + 2 * log2(refl_rough)));
-    var surface_col = refl_col;
-
-    if refr_dir.z != 0 {
-        let refr_col = textureSampleLevel(sky_filt, trilinear, refr_dir, max(0.0, max_cube_mip -1 + 2 * log2(refr_rough)));
-        //let refr_adj = vec4f(vec3f(refr_dir.z / dir.z), 1);
-        surface_col = mix(refr_col, refl_col, ks);
-    }
-
-    return mix(LIMIT_COLOR, surface_col, falloff);
+    //return vec4f(refl_col, 1);
+    let water_col = refl_fac * refl_col + trans_fac * trans_col;
+    return mix(LIMIT_COLOR, vec4f(water_col, 1.0), falloff);
 }
 
 @fragment fn clamp_tex(v: FQOut) -> @location(0) vec4f {

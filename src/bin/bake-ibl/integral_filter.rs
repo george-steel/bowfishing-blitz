@@ -1,7 +1,7 @@
 use bowfishing_blitz::{gputil::mip::MipMaker, *};
 use gputil::*;
 use std::{borrow::Cow, default};
-use wgpu::{wgt::TextureDescriptor, *};
+use wgpu::{wgt::{SamplerDescriptor, TextureDescriptor}, *};
 
 pub struct DFGBaker {
     shaders: ShaderModule,
@@ -10,14 +10,16 @@ pub struct DFGBaker {
     dirs_pipeline: RenderPipeline,
 }
 
+#[derive(Debug, Clone)]
 pub struct DFGTables {
     pub dfg: Texture,
     pub trans_dfg: Texture,
     pub dirs: Texture,
+    pub sampler: Sampler,
 }
 
 impl DFGBaker {
-    const OUTPUT_LINEAR: bool = true;
+    const OUTPUT_LINEAR: bool = false;
     const DFG1_FORMAT: TextureFormat = if Self::OUTPUT_LINEAR {TextureFormat::Rgba16Unorm} else {TextureFormat::Rg16Float};
     const OUTPUT_FORMAT: TextureFormat = if Self::OUTPUT_LINEAR {TextureFormat::Rgba16Unorm} else {TextureFormat::Rgba16Float};
     const DFG1_EXT: &'static str = if Self::OUTPUT_LINEAR {"rgba16un"} else {"rg16f"};
@@ -40,7 +42,7 @@ impl DFGBaker {
     const DIRS_DIM_NV: u32 = 128;
     const DIRS_DIM_ROUGH: u32 = 128;
     const DIRS_ROW_SIZE: u32 = Self::DIRS_DIM_NV * 8;
-    const DIRS_BUF_SIZE: u32 = Self::DIRS_DIM_NV * Self::DIRS_DIM_ROUGH * 8 * 4;
+    const DIRS_BUF_SIZE: u32 = Self::DIRS_DIM_NV * Self::DIRS_DIM_ROUGH * 8 * 5;
 
     pub fn new(gpu: &GPUContext) -> Self {
         let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
@@ -92,7 +94,7 @@ impl DFGBaker {
                 module: &shaders,
                 entry_point: Some("integrate_Dirs_LUT"),
                 compilation_options: Self::COMP_OPTIONS,
-                targets: &[Some(Self::OUTPUT_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into())],
+                targets: &[Some(Self::OUTPUT_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into())],
             }),
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleStrip,
@@ -144,7 +146,7 @@ impl DFGBaker {
 
         let dirs_out_tex = gpu.device.create_texture(&TextureDescriptor{
             label: Some("dfg_lut_tex"),
-            size: Extent3d { width: Self::DIRS_DIM_NV, height: Self::DIRS_DIM_ROUGH, depth_or_array_layers: 4 },
+            size: Extent3d { width: Self::DIRS_DIM_NV, height: Self::DIRS_DIM_ROUGH, depth_or_array_layers: 5 },
             format: Self::OUTPUT_FORMAT,
             mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
@@ -155,6 +157,15 @@ impl DFGBaker {
             size: Self::DIRS_BUF_SIZE as u64,
             usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
             mapped_at_creation: false 
+        });
+
+        let lut_sampler = gpu.device.create_sampler(&SamplerDescriptor{
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: FilterMode::Nearest,
+            ..Default::default()
         });
 
         let mut encoder = gpu.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -225,6 +236,15 @@ impl DFGBaker {
                     }),
                     Some(wgpu::RenderPassColorAttachment {
                         view: &slice_view(&dirs_out_tex, 3),
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &slice_view(&dirs_out_tex, 4),
                         depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
@@ -320,9 +340,15 @@ impl DFGBaker {
 
         let dfg1_out_range = dfg1_out_slice.get_mapped_range();
         let dfg1_out_data = bytemuck::cast_slice(&dfg1_out_range);
-        let dfg1_out_img = image::ImageBuffer::<image::Rgba<u16>, _>::from_raw(Self::DFG_DIM_NV, Self::DFG_DIM_ROUGH, dfg1_out_data).unwrap();
-        let dfg1_out_path = format!("./assets/staging/dfg_integral_lut.{}.png", Self::DFG1_EXT);
-        dfg1_out_img.save(&dfg1_out_path).unwrap();
+        if Self::OUTPUT_LINEAR {
+            let dfg1_out_img = image::ImageBuffer::<image::Rgba<u16>, _>::from_raw(Self::DFG_DIM_NV, Self::DFG_DIM_ROUGH, dfg1_out_data).unwrap();
+            let dfg1_out_path = format!("./assets/staging/dfg_integral_lut.{}.png", Self::DFG1_EXT);
+            dfg1_out_img.save(&dfg1_out_path).unwrap();
+        } else {
+            let dfg1_out_img = image::ImageBuffer::<image::LumaA<u16>, _>::from_raw(Self::DFG_DIM_NV, Self::DFG_DIM_ROUGH, dfg1_out_data).unwrap();
+            let dfg1_out_path = format!("./assets/staging/dfg_integral_lut.{}.png", Self::DFG1_EXT);
+            dfg1_out_img.save(&dfg1_out_path).unwrap();
+        }
 
         let dfg2_out_range = dfg2_out_slice.get_mapped_range();
         let dfg2_out_data = bytemuck::cast_slice(&dfg2_out_range);
@@ -332,7 +358,7 @@ impl DFGBaker {
 
         let dirs_out_range = dirs_out_slice.get_mapped_range();
         let dirs_out_data = bytemuck::cast_slice(&dirs_out_range);
-        let dirs_out_img = image::ImageBuffer::<image::Rgba<u16>, _>::from_raw(Self::DIRS_DIM_NV, Self::DIRS_DIM_ROUGH * 4, dirs_out_data).unwrap();
+        let dirs_out_img = image::ImageBuffer::<image::Rgba<u16>, _>::from_raw(Self::DIRS_DIM_NV, Self::DIRS_DIM_ROUGH * 5, dirs_out_data).unwrap();
         let dirs_out_path = format!("./assets/staging/dirs_integral_lut.{}.png", Self::OUTPUT_EXT);
         dirs_out_img.save(&dirs_out_path).unwrap();
         log::info!("save complete");
@@ -341,6 +367,7 @@ impl DFGBaker {
             dfg: dfg1_out_tex,
             trans_dfg: dfg2_out_tex,
             dirs: dirs_out_tex,
+            sampler: lut_sampler,
         }
     }
 }
