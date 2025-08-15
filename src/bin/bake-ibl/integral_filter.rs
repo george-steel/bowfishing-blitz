@@ -10,20 +10,37 @@ pub struct DFGBaker {
     dirs_pipeline: RenderPipeline,
 }
 
+pub struct DFGTables {
+    pub dfg: Texture,
+    pub trans_dfg: Texture,
+    pub dirs: Texture,
+}
+
 impl DFGBaker {
+    const OUTPUT_LINEAR: bool = true;
+    const DFG1_FORMAT: TextureFormat = if Self::OUTPUT_LINEAR {TextureFormat::Rgba16Unorm} else {TextureFormat::Rg16Float};
+    const OUTPUT_FORMAT: TextureFormat = if Self::OUTPUT_LINEAR {TextureFormat::Rgba16Unorm} else {TextureFormat::Rgba16Float};
+    const DFG1_EXT: &'static str = if Self::OUTPUT_LINEAR {"rgba16un"} else {"rg16f"};
+    const OUTPUT_EXT: &'static str = if Self::OUTPUT_LINEAR {"rgba16un"} else {"rgba16f"};
+    pub const LIN_CORRECTION: f64 = if Self::OUTPUT_LINEAR {8.0} else {1.0};
+
     const COMP_OPTIONS: PipelineCompilationOptions<'static> = PipelineCompilationOptions {
-        constants: &[],
+        constants: &[("LIN_CORRECTION", Self::LIN_CORRECTION)],
         zero_initialize_workgroup_memory: true,
     };
+
+    const DFG1_WORD_SIZE: u32 = if Self::OUTPUT_LINEAR {8} else {4};
     const DFG_DIM_NV: u32 = 128;
     const DFG_DIM_ROUGH: u32 = 128;
-    const DFG_ROW_SIZE: u32 = Self::DFG_DIM_NV * 8;
-    const DFG_BUF_SIZE: u32 = Self::DFG_DIM_NV * Self::DFG_DIM_ROUGH * 8;
+    const DFG1_ROW_SIZE: u32 = Self::DFG_DIM_NV * Self::DFG1_WORD_SIZE;
+    const DFG1_BUF_SIZE: u32 = Self::DFG1_ROW_SIZE * Self::DFG_DIM_ROUGH;
+    const DFG2_ROW_SIZE: u32 = Self::DFG_DIM_NV * 8;
+    const DFG2_BUF_SIZE: u32 = Self::DFG_DIM_NV * Self::DFG_DIM_ROUGH * 8;
 
-    const DIRS_DIM_NV: u32 = 64;
-    const DIRS_DIM_ROUGH: u32 = 64;
+    const DIRS_DIM_NV: u32 = 128;
+    const DIRS_DIM_ROUGH: u32 = 128;
     const DIRS_ROW_SIZE: u32 = Self::DIRS_DIM_NV * 8;
-    const DIRS_BUF_SIZE: u32 = Self::DIRS_DIM_NV * Self::DIRS_DIM_ROUGH * 8 * 2;
+    const DIRS_BUF_SIZE: u32 = Self::DIRS_DIM_NV * Self::DIRS_DIM_ROUGH * 8 * 4;
 
     pub fn new(gpu: &GPUContext) -> Self {
         let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
@@ -50,7 +67,7 @@ impl DFGBaker {
                 module: &shaders,
                 entry_point: Some("integrate_DFG_LUT"),
                 compilation_options: Self::COMP_OPTIONS,
-                targets: &[Some(TextureFormat::Rgba16Unorm.into())],
+                targets: &[Some(Self::DFG1_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into())],
             }),
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleStrip,
@@ -75,7 +92,7 @@ impl DFGBaker {
                 module: &shaders,
                 entry_point: Some("integrate_Dirs_LUT"),
                 compilation_options: Self::COMP_OPTIONS,
-                targets: &[Some(TextureFormat::Rgba16Unorm.into()), Some(TextureFormat::Rgba16Unorm.into())],
+                targets: &[Some(Self::OUTPUT_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into()), Some(Self::OUTPUT_FORMAT.into())],
             }),
             primitive: PrimitiveState {
                 topology: PrimitiveTopology::TriangleStrip,
@@ -94,27 +111,42 @@ impl DFGBaker {
         }
     }
 
-    pub fn integrate_dfg_lut(&self, gpu: &GPUContext) -> (Texture, Texture) {
-        let dfg_out_tex = gpu.device.create_texture(&TextureDescriptor{
+    pub fn integrate_dfg_lut(&self, gpu: &GPUContext) -> DFGTables {
+        let dfg1_out_tex = gpu.device.create_texture(&TextureDescriptor{
             label: Some("dfg_lut_tex"),
             size: Extent3d { width: Self::DFG_DIM_NV, height: Self::DFG_DIM_ROUGH, depth_or_array_layers: 1 },
-            format: TextureFormat::Rgba16Unorm,
+            format: Self::DFG1_FORMAT,
             mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
             view_formats: &[],
         });
-        let dfg_out_buf = gpu.device.create_buffer(&BufferDescriptor {
+        let dfg1_out_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("dfg_lut_out_buf"),
-            size: Self::DFG_BUF_SIZE as u64,
+            size: Self::DFG1_BUF_SIZE as u64,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false 
+        });
+
+        let dfg2_out_tex = gpu.device.create_texture(&TextureDescriptor{
+            label: Some("dfg_lut_tex"),
+            size: Extent3d { width: Self::DFG_DIM_NV, height: Self::DFG_DIM_ROUGH, depth_or_array_layers: 1 },
+            format: Self::OUTPUT_FORMAT,
+            mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let dfg2_out_buf = gpu.device.create_buffer(&BufferDescriptor {
+            label: Some("dfg_lut_out_buf"),
+            size: Self::DFG2_BUF_SIZE as u64,
             usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
             mapped_at_creation: false 
         });
 
         let dirs_out_tex = gpu.device.create_texture(&TextureDescriptor{
             label: Some("dfg_lut_tex"),
-            size: Extent3d { width: Self::DIRS_DIM_NV, height: Self::DIRS_DIM_ROUGH, depth_or_array_layers: 2 },
-            format: TextureFormat::Rgba16Unorm,
-            mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D3,
+            size: Extent3d { width: Self::DIRS_DIM_NV, height: Self::DIRS_DIM_ROUGH, depth_or_array_layers: 4 },
+            format: Self::OUTPUT_FORMAT,
+            mip_level_count: 1, sample_count: 1, dimension: wgpu::TextureDimension::D2,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
             view_formats: &[],
         });
@@ -133,7 +165,16 @@ impl DFGBaker {
                 label: None,
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &dfg_out_tex.create_view(&Default::default()),
+                        view: &slice_view(&dfg1_out_tex, 0),
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &slice_view(&dfg2_out_tex, 0),
                         depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
@@ -152,13 +193,12 @@ impl DFGBaker {
         }
 
         {
-            let dirs_view = dirs_out_tex.create_view(&Default::default());
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &dirs_view,
-                        depth_slice: Some(0),
+                        view: &slice_view(&dirs_out_tex, 0),
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -166,8 +206,26 @@ impl DFGBaker {
                         },
                     }),
                     Some(wgpu::RenderPassColorAttachment {
-                        view: &dirs_view,
-                        depth_slice: Some(1),
+                        view: &slice_view(&dirs_out_tex, 1),
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &slice_view(&dirs_out_tex, 2),
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    }),
+                    Some(wgpu::RenderPassColorAttachment {
+                        view: &slice_view(&dirs_out_tex, 3),
+                        depth_slice: None,
                         resolve_target: None,
                         ops: wgpu::Operations {
                             load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -187,19 +245,36 @@ impl DFGBaker {
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
                 aspect: wgpu::TextureAspect::All,
-                        texture: &dfg_out_tex,
+                        texture: &dfg1_out_tex,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
             },
             wgpu::TexelCopyBufferInfo {
-                buffer: &dfg_out_buf,
+                buffer: &dfg1_out_buf,
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(Self::DFG_ROW_SIZE),
+                    bytes_per_row: Some(Self::DFG1_ROW_SIZE),
                     rows_per_image: Some(Self::DFG_DIM_ROUGH),
                 },
             },
-            dfg_out_tex.size(),
+            dfg1_out_tex.size(),
+        );
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                aspect: wgpu::TextureAspect::All,
+                        texture: &dfg2_out_tex,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &dfg2_out_buf,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(Self::DFG2_ROW_SIZE),
+                    rows_per_image: Some(Self::DFG_DIM_ROUGH),
+                },
+            },
+            dfg1_out_tex.size(),
         );
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
@@ -223,31 +298,49 @@ impl DFGBaker {
 
         let (tx, rx) = std::sync::mpsc::channel();
         let tx2 = tx.clone();
-        let dfg_out_slice = dfg_out_buf.slice(..);
-        dfg_out_slice.map_async(wgpu::MapMode::Read, move |result| {
+        let tx3 = tx.clone();
+        let dfg1_out_slice = dfg1_out_buf.slice(..);
+        dfg1_out_slice.map_async(wgpu::MapMode::Read, move |result| {
             tx.send(result).unwrap();
+        });
+        let dfg2_out_slice = dfg2_out_buf.slice(..);
+        dfg2_out_slice.map_async(wgpu::MapMode::Read, move |result| {
+            tx2.send(result).unwrap();
         });
         let dirs_out_slice = dirs_out_buf.slice(..);
         dirs_out_slice.map_async(wgpu::MapMode::Read, move |result| {
-            tx2.send(result).unwrap();
+            tx3.send(result).unwrap();
         });
         
         gpu.device.poll(wgpu::PollType::Wait);
         rx.recv().unwrap().unwrap();
         rx.recv().unwrap().unwrap();
+        rx.recv().unwrap().unwrap();
         log::info!("integration complete");
 
-        let dfg_out_range = dfg_out_slice.get_mapped_range();
-        let dfg_out_data = bytemuck::cast_slice(&dfg_out_range);
-        let dfg_out_img = image::ImageBuffer::<image::Rgba<u16>, _>::from_raw(Self::DFG_DIM_NV, Self::DFG_DIM_ROUGH, dfg_out_data).unwrap();
-        dfg_out_img.save("./assets/staging/dfg_integral_lut.rgba16un.png").unwrap();
+        let dfg1_out_range = dfg1_out_slice.get_mapped_range();
+        let dfg1_out_data = bytemuck::cast_slice(&dfg1_out_range);
+        let dfg1_out_img = image::ImageBuffer::<image::Rgba<u16>, _>::from_raw(Self::DFG_DIM_NV, Self::DFG_DIM_ROUGH, dfg1_out_data).unwrap();
+        let dfg1_out_path = format!("./assets/staging/dfg_integral_lut.{}.png", Self::DFG1_EXT);
+        dfg1_out_img.save(&dfg1_out_path).unwrap();
+
+        let dfg2_out_range = dfg2_out_slice.get_mapped_range();
+        let dfg2_out_data = bytemuck::cast_slice(&dfg2_out_range);
+        let dfg2_out_img = image::ImageBuffer::<image::Rgba<u16>, _>::from_raw(Self::DFG_DIM_NV, Self::DFG_DIM_ROUGH, dfg2_out_data).unwrap();
+        let dfg2_out_path = format!("./assets/staging/dfg_trans_integral_lut.{}.png", Self::OUTPUT_EXT);
+        dfg2_out_img.save(&dfg2_out_path).unwrap();
 
         let dirs_out_range = dirs_out_slice.get_mapped_range();
         let dirs_out_data = bytemuck::cast_slice(&dirs_out_range);
-        let dirs_out_img = image::ImageBuffer::<image::Rgba<u16>, _>::from_raw(Self::DIRS_DIM_NV, Self::DIRS_DIM_ROUGH * 2, dirs_out_data).unwrap();
-        dirs_out_img.save("./assets/staging/dirs_integral_lut.rgba16un.png").unwrap();
+        let dirs_out_img = image::ImageBuffer::<image::Rgba<u16>, _>::from_raw(Self::DIRS_DIM_NV, Self::DIRS_DIM_ROUGH * 4, dirs_out_data).unwrap();
+        let dirs_out_path = format!("./assets/staging/dirs_integral_lut.{}.png", Self::OUTPUT_EXT);
+        dirs_out_img.save(&dirs_out_path).unwrap();
         log::info!("save complete");
 
-        (dfg_out_tex, dirs_out_tex)
+        DFGTables {
+            dfg: dfg1_out_tex,
+            trans_dfg: dfg2_out_tex,
+            dirs: dirs_out_tex,
+        }
     }
 }

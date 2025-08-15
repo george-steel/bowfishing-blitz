@@ -210,6 +210,15 @@ pub fn extent_2d(size: UVec2) -> wgpu::Extent3d {
     wgpu::Extent3d { width: size.x, height: size.y, depth_or_array_layers: 1}
 }
 
+pub fn slice_view(tex: &wgpu::Texture, slice: u32) -> wgpu::TextureView {
+    tex.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2),
+        base_array_layer: slice,
+        array_layer_count: Some(1),
+        ..Default::default()
+    })
+}
+
 pub fn smoothstep(t: f32) -> f32 {
     let ct = t.clamp(0.0, 1.0);
     ct * ct * (3.0 - 2.0 * ct)

@@ -3,9 +3,9 @@ use gputil::*;
 use camera::*;
 use wgpu::Features;
 
-mod ibl_filter;
+mod spherical_filter;
 mod water_filter;
-mod dfg_baker;
+mod integral_filter;
 
 use std::time::Instant;
 
@@ -49,9 +49,9 @@ fn main() {
     gpu.configure_surface_target(&surface, size);
 
     let window = &window;
-    let baker = ibl_filter::IBLFilter::new(&gpu);
+    let baker = spherical_filter::IBLFilter::new(&gpu);
     let water_baker = water_filter::WaterFilter::new(&gpu);
-    let dfg_baker = dfg_baker::DFGBaker::new(&gpu);
+    let dfg_baker = integral_filter::DFGBaker::new(&gpu);
 
     let test_cube = baker.make_test_cube(&gpu, 32);
 

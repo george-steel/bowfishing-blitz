@@ -440,7 +440,7 @@ impl IBLFilter {
         gpu.queue.submit([encoder.finish()]);
     }
 
-    pub fn bake_maps(&self, gpu: &GPUContext, in_view: &TextureView, name: Option<&str>) {
+    pub fn bake_maps(&self, gpu: &GPUContext, in_view: &TextureView, name: Option<&str>) -> (Texture, Texture) {
         let spectrum_buf = gpu.device.create_buffer(&BufferDescriptor {
             label: Some("spectrum_buf"),
             size: Self::SPECTRUM_BUFFER_SIZE,
@@ -754,6 +754,8 @@ impl IBLFilter {
         filtered_tex.destroy();
         radiance_out_buf.destroy();
         irradiance_out_buf.destroy();
+
+        (radiance_cube_tex, irradiance_cube_tex)
     }
 
     pub fn bake_cube(&self, gpu: &GPUContext, in_view: &TextureView, name: &str, size: u32) {

@@ -17,6 +17,46 @@ struct FQOut {
     return out;
 }
 
+const MAX_CUBE_ANISO: u32 = 8;
+fn sampleCubeAniso(radiance: texture_cube<f32>, samp: sampler, dir: vec3f, major_axis: vec3f, alpha_along: f32, alpha_cross: f32) -> vec4f {
+    let total_mips = textureNumLevels(radiance);
+
+    var alpha_hi = alpha_along;
+    var alpha_lo = alpha_cross;
+    if alpha_cross > alpha_along {
+        alpha_hi = alpha_cross;
+        alpha_lo = alpha_along;
+    }
+    alpha_hi = max(alpha_hi, 0.001);
+    alpha_lo = max(alpha_lo, alpha_hi / f32(MAX_CUBE_ANISO));
+
+    let eccentricity = alpha_hi / alpha_lo;
+    let n_samples = u32(round(eccentricity)) + 1;
+
+    let mip = max(0.0, f32(total_mips) + log2(alpha_lo));
+
+    let ndir = normalize(dir);
+    let adir = normalize(major_axis - dot(major_axis, ndir) * ndir);
+
+    let samp_rad = 2 * alpha_hi * (eccentricity - 1);
+
+    var total_tex = vec4f(0);
+    var total_weight = 0u;
+
+    for (var i = 0u; i < n_samples; i += 1) {
+        let t = 2 * f32(i) / f32(n_samples - 1) - 1;
+        let sdir = ndir + samp_rad * t * adir;
+
+        let weight = min(i + 1, n_samples - i);
+        total_weight += weight;
+
+        let stex = textureSampleLevel(radiance, samp, sdir, mip);
+        total_tex += f32(weight) * stex;
+    }
+
+    return total_tex / f32(total_weight);
+}
+
 override U_AT_PLUSX: f32 = 0.5;
 override WATER_STRENGTH: f32 = 0.6;
 override WATER_ROUGH: f32 = 0.25;
