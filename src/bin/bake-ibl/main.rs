@@ -101,7 +101,7 @@ fn main() {
                                 window.request_redraw();
                             }
                             Ok(frame) => {
-                                baker.render(&gpu, &below_cube, &frame.texture);
+                                baker.render(&gpu, &above_cube, &frame.texture);
                                 frame.present();
                                 window.request_redraw();
                             }

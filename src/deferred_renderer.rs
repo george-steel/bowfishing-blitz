@@ -29,14 +29,10 @@ pub trait RenderObject {
 #[repr(C, align(16))]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GlobalLighting {
-    pub upper_ambient_color: Vec3,
-    pub pad0: f32,
-    pub lower_ambient_color: Vec3,
-    pub pad1: f32,
     pub sun_color: Vec3,
-    pub pad2: f32,
+    pub sky_fac: f32,
     pub sun_dir: Vec3, // towards sun
-    pub pad3: f32,
+    pub pad0: f32,
     pub refr_sun_dir: Vec3,
     pub refr_sun_trans: f32,
     pub water_lim_color: Vec3,
@@ -44,7 +40,7 @@ pub struct GlobalLighting {
 }
 
 impl GlobalLighting {
-    pub fn new(upper_ambient_color: Vec3, lower_ambient_color: Vec3, sun_color: Vec3, sun_dir: Vec3) -> Self {
+    pub fn new(sun_color: Vec3, sky_fac: f32, sun_dir: Vec3) -> Self {
         let norm_sun = sun_dir.normalize();
         let sin_above = norm_sun.xy().length();
         let cos_below = (1.0 - sin_above * sin_above / 1.7689).sqrt();
@@ -53,11 +49,11 @@ impl GlobalLighting {
         let water_lim_color = vec3(0.03, 0.05, 0.1);
         let half_secci = 15.0;
         GlobalLighting {
-            upper_ambient_color, lower_ambient_color, sun_color,
+            sun_color, sky_fac,
             sun_dir: norm_sun,
             refr_sun_dir, refr_sun_trans,
             water_lim_color, half_secci,
-            pad0: 0.0, pad1: 0.0, pad2: 0.0, pad3: 0.0,
+            pad0: 0.0,
         }
     }
 }
@@ -214,7 +210,8 @@ pub struct DeferredRenderer {
     water_gbuffer_bind_layout: BindGroupLayout,
     water_trans_gbuffer_bind_group: BindGroup,
     water_refl_gbuffer_bind_group: BindGroup,
-    lighting_bind_group: BindGroup,
+    above_lighting_bind_group: BindGroup,
+    below_lighting_bind_group: BindGroup,
     lighting_pipeline: RenderPipeline,
     underwater_lighting_pipeline: RenderPipeline,
     reflected_lighting_pipeline: RenderPipeline,
@@ -449,22 +446,46 @@ impl DeferredRenderer {
                     count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 1, // sky
+                    binding: 1, // lut_sampler
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 2, // dfg_lut
                     ty: BindingType::Texture { sample_type:TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::D2, multisampled: false },
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 2, // bilinear for water transmission
+                    binding: 3, // cube_trilinear
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     visibility: ShaderStages::FRAGMENT, count: None,
-                }
+                },
+                BindGroupLayoutEntry{
+                    binding: 4, // cube_bilinear
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 5, // radiance_map
+                    ty: BindingType::Texture { sample_type:TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::Cube, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 6, // irradiance_map
+                    ty: BindingType::Texture { sample_type:TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::Cube, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 7, // sky
+                    ty: BindingType::Texture { sample_type:TextureSampleType::Float { filterable: true }, view_dimension: TextureViewDimension::Cube, multisampled: false },
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
             ],
         });
 
         let global_lighting = GlobalLighting::new(
-            vec3(0.15, 0.15, 0.3),
-            vec3(0.07, 0.1, 0.03),
-            vec3(1.0, 1.0, 0.8),
+            0.8 * vec3(1.0, 1.0, 0.8),
+            0.6,
             vec3(0.548, -0.380, 0.745)
         );
 
@@ -474,23 +495,66 @@ impl DeferredRenderer {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let sky_tex = gpu.load_rgbe8_texture("./assets/sky-equirect.rgbe8.png").expect("Failed to load sky");
-        let sky_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
+        let sky_tex = gpu.load_rgbe8_cube_texture("./assets/staging/skybox.cube.rgbe8.png", 1).expect("Failed to load sky");
+        let above_radiance_tex = gpu.load_rgbe8_cube_texture("./assets/staging/above-radiance.mipcube.rgbe8.png", 8).expect("Failed to load sky");
+        let above_irradiance_tex = gpu.load_rgbe8_cube_texture("./assets/staging/above-irradiance.mipcube.rgbe8.png", 1).expect("Failed to load sky");
+        let below_radiance_tex = gpu.load_rgbe8_cube_texture("./assets/staging/below-radiance.mipcube.rgbe8.png", 8).expect("Failed to load sky");
+        let below_irradiance_tex = gpu.load_rgbe8_cube_texture("./assets/staging/below-irradiance.mipcube.rgbe8.png", 1).expect("Failed to load sky");
+        let dfg_lut_tex = gpu.load_png_texture::<u32>("./assets/staging/dfg_integral_lut.rg16f.png", TextureFormat::Rg16Float).expect("Failed to load DFG");
+
+        let lut_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             min_filter: wgpu::FilterMode::Linear,
             mag_filter: wgpu::FilterMode::Linear,
-            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..wgpu::SamplerDescriptor::default()
         });
-        let sky_tex_view = sky_tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let cube_bilinear_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
+            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            ..wgpu::SamplerDescriptor::default()
+        });
+        let cube_trilinear_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
+            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            ..wgpu::SamplerDescriptor::default()
+        });
+        let sky_tex_view = cube_view(&sky_tex);
+        let dfg_tex_view = dfg_lut_tex.create_view(&Default::default());
 
-        let lighting_bind_group = gpu.device.create_bind_group(&BindGroupDescriptor {
+        let above_lighting_bind_group = gpu.device.create_bind_group(&BindGroupDescriptor {
             label: Some("lighting_bind_group"),
             layout: &lighting_bind_group_layout,
             entries: &[
                 BindGroupEntry {binding: 0, resource: global_lighting_buf.as_entire_binding()},
-                BindGroupEntry {binding: 1, resource: wgpu::BindingResource::TextureView(&sky_tex_view)},
-                BindGroupEntry {binding: 2, resource: wgpu::BindingResource::Sampler(&sky_sampler)},
+                BindGroupEntry {binding: 1, resource: wgpu::BindingResource::Sampler(&lut_sampler)},
+                BindGroupEntry {binding: 2, resource: wgpu::BindingResource::TextureView(&dfg_tex_view)},
+                BindGroupEntry {binding: 3, resource: wgpu::BindingResource::Sampler(&cube_trilinear_sampler)},
+                BindGroupEntry {binding: 4, resource: wgpu::BindingResource::Sampler(&cube_bilinear_sampler)},
+                BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&cube_view(&above_radiance_tex))},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&cube_view(&above_irradiance_tex))},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::TextureView(&sky_tex_view)},
+            ]
+        });
+
+        let below_lighting_bind_group = gpu.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("lighting_bind_group"),
+            layout: &lighting_bind_group_layout,
+            entries: &[
+                BindGroupEntry {binding: 0, resource: global_lighting_buf.as_entire_binding()},
+                BindGroupEntry {binding: 1, resource: wgpu::BindingResource::Sampler(&lut_sampler)},
+                BindGroupEntry {binding: 2, resource: wgpu::BindingResource::TextureView(&dfg_tex_view)},
+                BindGroupEntry {binding: 3, resource: wgpu::BindingResource::Sampler(&cube_trilinear_sampler)},
+                BindGroupEntry {binding: 4, resource: wgpu::BindingResource::Sampler(&cube_bilinear_sampler)},
+                BindGroupEntry {binding: 6, resource: wgpu::BindingResource::TextureView(&cube_view(&below_irradiance_tex))},
+                BindGroupEntry {binding: 5, resource: wgpu::BindingResource::TextureView(&cube_view(&below_radiance_tex))},
+                BindGroupEntry {binding: 7, resource: wgpu::BindingResource::TextureView(&sky_tex_view)},
             ]
         });
 
@@ -600,7 +664,7 @@ impl DeferredRenderer {
 
             gbuffer_bind_layout, gbuffer_bind_group, water_sampler, shadow_sampler,
             water_gbuffer_bind_layout, water_trans_gbuffer_bind_group, water_refl_gbuffer_bind_group,
-            lighting_bind_group,
+            above_lighting_bind_group, below_lighting_bind_group,
             lighting_pipeline, underwater_lighting_pipeline, reflected_lighting_pipeline,
         })
     }
@@ -756,7 +820,7 @@ impl DeferredRenderer {
             underwater_lighting_pass.set_pipeline(&self.underwater_lighting_pipeline);
             underwater_lighting_pass.set_bind_group(0, &self.global_bind_group, &[]);
             underwater_lighting_pass.set_bind_group(1, &self.water_trans_gbuffer_bind_group, &[]);
-            underwater_lighting_pass.set_bind_group(2, &self.lighting_bind_group, &[]);
+            underwater_lighting_pass.set_bind_group(2, &self.below_lighting_bind_group, &[]);
             underwater_lighting_pass.draw(0..3, 0..1);
         }
         {
@@ -826,7 +890,7 @@ impl DeferredRenderer {
             reflected_lighting_pass.set_pipeline(&self.reflected_lighting_pipeline);
             reflected_lighting_pass.set_bind_group(0, &self.global_bind_group, &[]);
             reflected_lighting_pass.set_bind_group(1, &self.water_refl_gbuffer_bind_group, &[]);
-            reflected_lighting_pass.set_bind_group(2, &self.lighting_bind_group, &[]);
+            reflected_lighting_pass.set_bind_group(2, &self.above_lighting_bind_group, &[]);
             reflected_lighting_pass.draw(0..3, 0..1);
         }
 
@@ -898,7 +962,7 @@ impl DeferredRenderer {
             lighting_pass.set_pipeline(&self.lighting_pipeline);
             lighting_pass.set_bind_group(0, &self.global_bind_group, &[]);
             lighting_pass.set_bind_group(1, &self.gbuffer_bind_group, &[]);
-            lighting_pass.set_bind_group(2, &self.lighting_bind_group, &[]);
+            lighting_pass.set_bind_group(2, &self.above_lighting_bind_group, &[]);
             lighting_pass.draw(0..3, 0..1);
 
             for obj in scene.iter() {

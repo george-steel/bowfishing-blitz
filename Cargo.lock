@@ -1762,9 +1762,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rgbe"
-version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2de8f444ac4a1d173e107b8523c17f9a4feebfde462e840ae6561a662e59a4e9"
+version = "0.0.2"
 dependencies = [
  "bytemuck",
  "half",

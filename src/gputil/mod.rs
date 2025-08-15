@@ -70,6 +70,13 @@ impl GPUContext {
         Ok(tex)
     }
 
+    pub fn load_rgbe8_cube_texture(&self, path: &str, num_levels: u32) -> ImageResult<wgpu::Texture> {
+        let (width, height, data) = rgbe::load_rgbe8_png_file_as_rgb9e5(Path::new(path.into()))?;
+        let img = PlanarImage {width: width as usize, height: height as usize, data};
+        let tex = self.upload_texture_cube(path, wgpu::TextureFormat::Rgb9e5Ufloat, &img, num_levels);
+        Ok(tex)
+    }
+
     pub fn load_r16f_texture(&self, path: &str) -> ImageResult<wgpu::Texture> {
         let img = load_png::<u16>(path)?;
         let tex = self.upload_2d_texture(path, wgpu::TextureFormat::R16Float, &img);
@@ -164,6 +171,39 @@ impl GPUContext {
         tex
     }
 
+    pub fn upload_texture_cube<Texel: bytemuck::Pod>(&self, label: &str, format: wgpu::TextureFormat, img: &PlanarImage<Texel>, num_levels: u32) -> wgpu::Texture {
+        let texel_size = std::mem::size_of::<Texel>();
+        if texel_size != format.block_copy_size(None).unwrap() as usize {
+            panic!("texture format must have the same size as the data buffer element")
+        }
+
+        let img_width = (img.width as u32);
+        let size = wgpu::Extent3d{width: img_width, height: img_width, depth_or_array_layers: 6};
+        let tex = self.device.create_texture(&wgpu::TextureDescriptor{
+            label: Some(label),
+            dimension: wgpu::TextureDimension::D2,
+            size, format,
+            mip_level_count: num_levels,
+            sample_count: 1,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let mut mip_size = img_width;
+        let mut offset: usize = 0;
+        for level in 0..num_levels {
+            let size = (mip_size * mip_size * 6) as usize;
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo{texture: &tex, mip_level: level, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All},
+                bytemuck::cast_slice(&img.data[offset..(offset+size)]),
+                wgpu::TexelCopyBufferLayout{offset: 0, bytes_per_row: Some((texel_size) as u32 * mip_size), rows_per_image: Some(mip_size)},
+                wgpu::Extent3d{width: mip_size, height: mip_size, depth_or_array_layers: 6}
+            );
+            offset += size;
+            mip_size /= 2;
+        }
+        tex
+    }
+
     pub fn create_empty_texture(&self, size: wgpu::Extent3d, format: wgpu::TextureFormat, label: &'static str) -> (wgpu::Texture, wgpu::TextureView) {
         let tex = self.device.create_texture(&wgpu::TextureDescriptor{
             label: Some(label),
@@ -215,6 +255,13 @@ pub fn slice_view(tex: &wgpu::Texture, slice: u32) -> wgpu::TextureView {
         dimension: Some(wgpu::TextureViewDimension::D2),
         base_array_layer: slice,
         array_layer_count: Some(1),
+        ..Default::default()
+    })
+}
+
+pub fn cube_view(tex: &wgpu::Texture) -> wgpu::TextureView {
+    tex.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::Cube),
         ..Default::default()
     })
 }

@@ -43,9 +43,8 @@ fn direct_diffuse_illumination(to_light: vec3f, normal: vec3f, albedo: vec3f, ao
 }
 
 struct GlobalLighting {
-    upper_ambient_color: vec3f,
-    lower_ambient_color: vec3f,
     sun_color: vec3f,
+    sky_fac: f32,
     sun_dir: vec3f, // towards sun
     refr_sun_dir: vec3f,
     refr_sun_trans: f32,
@@ -53,15 +52,36 @@ struct GlobalLighting {
     half_secci: f32,
 }
 
-@group(2) @binding(0) var<uniform> sun : GlobalLighting;
-@group(2) @binding(1) var sky_tex: texture_2d<f32>;
-@group(2) @binding(2) var sky_sampler: sampler;
+@group(2) @binding(0) var<uniform> sun: GlobalLighting;
+@group(2) @binding(1) var lut_sampler: sampler;
+@group(2) @binding(2) var dfg_lut: texture_2d<f32>;
+@group(2) @binding(3) var cube_trilinear: sampler;
+@group(2) @binding(4) var cube_bilinear: sampler;
+@group(2) @binding(5) var radiance_map: texture_cube<f32>;
+@group(2) @binding(6) var irradiance_map: texture_cube<f32>;
+@group(2) @binding(7) var sky_tex: texture_cube<f32>;
 
 fn get_sky(look_dir: vec3f) -> vec3f {
-    let look = normalize(look_dir);
-    let v = 0.5 - atan2(look.z, length(look.xy)) / PI;
-    let u = 0.5 - atan2(look.y, look.x) / (2*PI);
-    return textureSampleLevel(sky_tex, sky_sampler, vec2f(u, v), 0.0).xyz * 0.5;
+    return sun.sky_fac * textureSampleLevel(sky_tex, cube_bilinear, look_dir, 0.0).xyz;
+}
+
+fn ibl_illumination(to_eye: vec3f, normal: vec3f, rough: f32, metal: f32, albedo: vec3f, ao: f32, F0: f32) -> vec3f {
+    let nl = max(0.0, dot(to_eye, normal));
+    let dfg_uv = vec2f(sqrt(nl), rough);
+    let dfg_vals = textureSampleLevel(dfg_lut, lut_sampler, dfg_uv, 0.0);
+    let ks = mix(vec3f(F0), albedo, metal) * dfg_vals.x + dfg_vals.y;
+    let kd = (1-F0) * (1-metal) * ao;
+
+    let alpha = rough * rough;
+    // from "moving frostbite to PBR"
+    let dir_fac = (1-alpha) * (sqrt(1-alpha) + alpha);
+    let spec_dir = mix(normal, reflect(-to_eye, normal), dir_fac);
+    let max_radiance_mip = f32(textureNumLevels(radiance_map) - 1);
+
+    let spec_col = textureSampleLevel(radiance_map, cube_trilinear, spec_dir, max_radiance_mip + log2(alpha)).xyz;
+    let diff_col = textureSampleLevel(irradiance_map, cube_bilinear, spec_dir, 0.0).xyz;
+
+    return sun.sky_fac * (ks * spec_col + kd * albedo * diff_col);
 }
 
 @group(1) @binding(0) var dist_buf: texture_depth_2d;
@@ -142,8 +162,7 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         } else {
             let to_eye = normalize(camera.eye - world_pos);
             let ao = textureLoad(ao_buf, px, 0).x;
-            let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
-            let ambient = albedo * ao * amb_color;
+            let ambient = ibl_illumination(to_eye, normal, rough, metal, albedo, ao, 0.04);
 
             let to_light = sun.sun_dir;
             let shadow_point = shadow_map_point(world_pos);
@@ -191,8 +210,7 @@ fn get_sky(look_dir: vec3f) -> vec3f {
         let to_eye = vec3f(virt_to_eye.xy, -virt_to_eye.z);
 
         let ao = textureLoad(ao_buf, px, 0).x;
-        let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
-        let ambient = albedo * ao * amb_color;
+        let ambient = ibl_illumination(to_eye, normal, rough, metal, albedo, ao, 0.04);
 
         let to_light = sun.sun_dir;
         let shadow_point = shadow_map_point(world_pos);
@@ -243,8 +261,7 @@ fn get_sky(look_dir: vec3f) -> vec3f {
     } else {
         let to_eye = -look_dir_below;
         let ao = textureLoad(ao_buf, px, 0).x;
-        let amb_color = mix(sun.lower_ambient_color, sun.upper_ambient_color, 0.5 * (1+normal.z));
-        let ambient = albedo * amb_falloff * ao * amb_color;
+        let ambient = amb_falloff * ibl_illumination(to_eye, normal, rough, metal, albedo, ao, 0.01);
 
         let to_light = sun.refr_sun_dir;
         let shadow_point = shadow_map_point(world_pos);
