@@ -22,22 +22,30 @@ fn shad_GGX(nv: f32, rough: f32) -> f32{
     return nv / mix(nv, 1.0, k);
 }
 
-fn direct_specular_illumination(to_eye: vec3f, to_light: vec3f, normal: vec3f, rough: f32, metal: f32, albedo: vec3f, ao: f32, F0: f32) -> vec4f {
+fn direct_illumination(to_eye: vec3f, to_light: vec3f, normal: vec3f, rough: f32, metal: f32, albedo: vec3f, ao: f32, F0: f32) -> vec3f {
     let h = normalize(to_eye + to_light);
     let vh = dot(to_eye, h);
     let nv = max(0.0, dot(to_eye, normal));
     let nl = max(0.0, dot(to_light, normal));
-    let shlick = pow(clamp(1.0 - vh, 0.0, 1.0), 5.0);
-    let kS = mix(mix(vec3f(F0), albedo, metal), vec3f(1.0), shlick);
-    let kD = mix(mix(1.0 - F0, 0.0, metal), 0.0, shlick);
 
+    let shlick_vh = pow(clamp(1.0 - vh, 0.0, 1.0), 5.0);
+    let ks = mix(mix(vec3f(F0), albedo, metal), vec3f(1.0), shlick_vh);
     let ndf = dist_GGX(normal, h, rough);
-    let shad = shad_GGX(nv, rough) * shad_GGX(nl, rough) * mix(ao, 1.0, nl);
+    let spec_ao = saturate(pow(nv + ao, exp2(-16.0 * rough - 1.0)) -1.0 + ao);
+    let shad = shad_GGX(nv, rough) * shad_GGX(nl, rough) * spec_ao;
     let spec_fac = ndf * shad / ((4.0 * nv) + 0.0001);
-    return vec4f(spec_fac * kS, kD);
+    let spec = spec_fac * ks;
+
+    let d0 = sqrt(mix(1-F0, 0, metal));
+    let d90 = 2 * rough * vh * vh;
+    let shlick_nl = pow(clamp(1.0 - nl, 0.0, 1.0), 5.0);
+    let shlick_nv = pow(clamp(1.0 - nv, 0.0, 1.0), 5.0);
+    let kd = mix(d0, d90, shlick_nl) * mix(d0, d90, shlick_nv);
+    let diff = albedo * nl * kd * mix(ao, 1.0, nl);
+    return spec + diff;
 }
 
-fn direct_diffuse_illumination(to_light: vec3f, normal: vec3f, albedo: vec3f, ao: f32) -> vec3f {
+fn direct_diffuse_illumination(to_eye: vec3f, to_light: vec3f, normal: vec3f, rough: f32, metal: f32, albedo: vec3f, ao: f32, F0: f32) -> vec3f {
     let nl = max(0.0, dot(to_light, normal));
     return albedo * nl * mix(ao, 1.0, nl);
 }
@@ -66,11 +74,13 @@ fn get_sky(look_dir: vec3f) -> vec3f {
 }
 
 fn ibl_illumination(to_eye: vec3f, normal: vec3f, rough: f32, metal: f32, albedo: vec3f, ao: f32, F0: f32) -> vec3f {
-    let nl = max(0.0, dot(to_eye, normal));
-    let dfg_uv = vec2f(sqrt(nl), rough);
+    let nv = max(0.0, dot(to_eye, normal));
+    let dfg_uv = vec2f(sqrt(nv), rough);
     let dfg_vals = textureSampleLevel(dfg_lut, lut_sampler, dfg_uv, 0.0);
     let ks = mix(vec3f(F0), albedo, metal) * dfg_vals.x + dfg_vals.y;
-    let kd = (1-F0) * (1-metal) * ao;
+    let spec_ao = saturate(pow(nv + ao, exp2(-16.0 * rough - 1.0)) -1.0 + ao);
+    let shlick_nl = pow(clamp(1.0 - nv, 0.0, 1.0), 5.0);
+    let kd = (1-F0) * (1-metal) * mix(1, rough, shlick_nl);
 
     let alpha = rough * rough;
     // from "moving frostbite to PBR"
@@ -81,7 +91,7 @@ fn ibl_illumination(to_eye: vec3f, normal: vec3f, rough: f32, metal: f32, albedo
     let spec_col = textureSampleLevel(radiance_map, cube_trilinear, spec_dir, max_radiance_mip + log2(alpha)).xyz;
     let diff_col = textureSampleLevel(irradiance_map, cube_bilinear, spec_dir, 0.0).xyz;
 
-    return sun.sky_fac * (ks * spec_col + kd * albedo * diff_col);
+    return sun.sky_fac * (ks * spec_ao * spec_col + kd * ao * albedo * diff_col);
 }
 
 @group(1) @binding(0) var dist_buf: texture_depth_2d;
@@ -171,10 +181,9 @@ fn ibl_illumination(to_eye: vec3f, normal: vec3f, rough: f32, metal: f32, albedo
         let to_light = sun.sun_dir;
         let shadow_point = shadow_map_point(world_pos);
         let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
-        let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, ao, 0.04);
-        let direct_diff = direct_diffuse_illumination(to_light, normal, albedo, ao);
-        let direct_irradiance = shadow_fac * sun.sun_color;
-        let direct = direct_irradiance * (direct_spec.xyz + direct_diff * direct_spec.w);
+        let direct_refl = direct_illumination(to_eye, to_light, normal, rough, metal, albedo, ao, 0.04);
+        let direct_radiance = shadow_fac * sun.sun_color;
+        let direct = direct_radiance * direct_refl;
 
         color = ambient + direct + emit;
     }
@@ -220,10 +229,9 @@ fn ibl_illumination(to_eye: vec3f, normal: vec3f, rough: f32, metal: f32, albedo
     let to_light = sun.sun_dir;
     let shadow_point = shadow_map_point(world_pos);
     let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
-    let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, ao, 0.04);
-    let direct_diff = direct_diffuse_illumination(to_light, normal, albedo, ao);
-    let direct_irradiance = shadow_fac * sun.sun_color;
-    let direct = direct_irradiance * (direct_spec.xyz + direct_diff * direct_spec.w);
+    let direct_refl = direct_illumination(to_eye, to_light, normal, rough, metal, albedo, ao, 0.04);
+    let direct_radiance = shadow_fac * sun.sun_color;
+    let direct = direct_radiance * direct_refl;
 
     let color = ambient + direct + emit;
     return vec4f(color, 1.0);
@@ -271,10 +279,9 @@ fn ibl_illumination(to_eye: vec3f, normal: vec3f, rough: f32, metal: f32, albedo
     let to_light = sun.refr_sun_dir;
     let shadow_point = shadow_map_point(world_pos);
     let shadow_fac = textureSampleCompareLevel(shadow_buf, shadow_sampler, shadow_point.xy, shadow_point.z);
-    let direct_spec = direct_specular_illumination(to_eye, to_light, normal, rough, metal, albedo, ao, 0.01);
-    let direct_diff = direct_diffuse_illumination(to_light, normal, albedo, ao);
-    let direct_irradiance = shadow_fac * sun_falloff * sun.refr_sun_trans * sun.sun_color;
-    let direct = direct_irradiance * (direct_spec.xyz + direct_diff * direct_spec.w);
+    let direct_refl = direct_illumination(to_eye, to_light, normal, rough, metal, albedo, ao, 0.01);
+    let direct_radiance = shadow_fac * sun_falloff * sun.refr_sun_trans * sun.sun_color;
+    let direct = direct_radiance * direct_refl;
 
     let color = ambient + direct + emit;
     return vec4f(mix(sun.water_lim_color, color, look_falloff), 1);
