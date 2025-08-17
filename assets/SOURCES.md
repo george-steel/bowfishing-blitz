@@ -12,10 +12,10 @@ Textures
 Poly Haven: Kloofendal 48d Partly Cloudy (Pure Sky)
 https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky
 
-Terrain textures (grass, dirt, rock) my Lennart Demes (AmbientCG).
-https://ambientcg.com/view?id=Grass002
-https://ambientcg.com/view?id=Ground071
-https://ambientcg.com/view?id=Rock050
+Terrain textures (grass, dirt, rock) by Lennart Demes (AmbientCG).
+https://ambientcg.com/view?id=Moss003
+https://ambientcg.com/view?id=Ground085
+https://ambientcg.com/view?id=Rock036
 
 Pot textures are custom composite using additional AmbientCG materials as sources.
 https://ambientcg.com/view?id=Clay001
