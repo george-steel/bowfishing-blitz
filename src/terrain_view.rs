@@ -287,12 +287,12 @@ impl TerrainView {
             ..wgpu::SamplerDescriptor::default()
         });
 
-        let grass_co_tex = gpu.load_texture_make_mips::<u32>("./assets/grass-co.png", TextureFormat::Rgba8UnormSrgb, 5).unwrap();
-        let grass_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/grass-nr.png", TextureFormat::Rgba8Unorm, 5).unwrap();
-        let dirt_co_tex = gpu.load_texture_make_mips::<u32>("./assets/dirt-co.png", TextureFormat::Rgba8UnormSrgb, 5).unwrap();
-        let dirt_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/dirt-nr.png", TextureFormat::Rgba8Unorm, 5).unwrap();
-        let rock_co_tex = gpu.load_texture_make_mips::<u32>("./assets/rock-co.png", TextureFormat::Rgba8UnormSrgb, 5).unwrap();
-        let rock_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/rock-nr.png", TextureFormat::Rgba8Unorm, 5).unwrap();
+        let grass_co_tex = gpu.load_texture_make_mips::<u32>("./assets/grass.co.png", TextureFormat::Rgba8UnormSrgb, 7).unwrap();
+        let grass_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/grass.nr.png", TextureFormat::Rgba8Unorm, 7).unwrap();
+        let dirt_co_tex = gpu.load_texture_make_mips::<u32>("./assets/dirt.co.png", TextureFormat::Rgba8UnormSrgb, 7).unwrap();
+        let dirt_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/dirt.nr.png", TextureFormat::Rgba8Unorm, 7).unwrap();
+        let rock_co_tex = gpu.load_texture_make_mips::<u32>("./assets/rock.co.png", TextureFormat::Rgba8UnormSrgb, 7).unwrap();
+        let rock_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/rock.nr.png", TextureFormat::Rgba8Unorm, 7).unwrap();
         
 
         let terrain_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {

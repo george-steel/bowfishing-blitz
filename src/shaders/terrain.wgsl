@@ -88,8 +88,8 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     let bias = perlin_noise_deriv(xy, mat2x2f(0.3, 0, 0, 0.3), 20);
 
     let base_uv = xy * vec2f(1.0, -1.0);
-    let grass_uv = (base_uv + 1.5 * bias.xy) / 4;
-    let dirt_uv = (base_uv + 0.2 * bias.yx) / 3;
+    let grass_uv = (base_uv + 0.3 * bias.xy) / 3.5;
+    let dirt_uv = (base_uv + 0.4 * bias.yx) / 3;
     let rock_uv = (base_uv - 1.2 * bias.xy) / 8;
     // splat textures
     let grass_co = textureSample(grass_co_tex, tex_sampler, grass_uv);
@@ -97,12 +97,12 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     let dirt_co = textureSample(dirt_co_tex, tex_sampler, dirt_uv);
     let dirt_nr = textureSample(dirt_nr_tex, tex_sampler, dirt_uv);
     let rock_co = textureSample(rock_co_tex, tex_sampler, rock_uv);
-    let rock_nr = textureSample(rock_nr_tex, tex_sampler, rock_uv);
+    let rock_nr = textureSample(rock_nr_tex, tex_sampler, rock_uv) * vec4f(1, 1, 1, 0.85);
 
-    let rock_fac = smoothstep(0.2, 0.8, length(norm.xy) + 0.2 * bias.z);
-    let grass_fac = smoothstep(-0.3, 0.6, z - 0.1 * bias.z);
+    let rock_fac = smoothstep(0.3, 0.7, length(norm.xy) + 0.2 * bias.z);
+    let grass_fac = smoothstep(-0.1, 0.6, z - 0.1 * bias.z);
     
-    let checker = (floor(10 * grass_uv.x) + floor(10 * grass_uv.y)) % 2;
+    //let checker = (floor(10 * grass_uv.x) + floor(10 * grass_uv.y)) % 2;
     var params: SolidParams;
     params.co = mix(mix(dirt_co, grass_co, grass_fac), rock_co, rock_fac);
     //params.co = select(vec4f(1, 0, 0, 1), vec4f(0, 1, 0, 1), checker == 0.0);
@@ -130,7 +130,7 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
 
     // correction for naive normal downscaling and mipmapping
     // see https://developer.download.nvidia.com/whitepapers/2006/Mipmapping_Normal_Maps.pdf
-    var rough = mix(1.0, params.nr.w, length(tan_norm));
+    var rough = mix(1.0, params.nr.w, sqrt(length(tan_norm)));
 
     if PATH_ID != PATH_REFRACT {
         rough *= 0.5 + 0.5 * smoothstep(0.02, 0.15, v.world_pos.z);

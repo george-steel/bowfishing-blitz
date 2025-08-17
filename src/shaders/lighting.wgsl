@@ -37,7 +37,7 @@ fn direct_illumination(to_eye: vec3f, to_light: vec3f, normal: vec3f, rough: f32
     let spec = spec_fac * ks;
 
     let d0 = sqrt(mix(1-F0, 0, metal));
-    let d90 = 2 * rough * vh * vh;
+    let d90 = 2.5 * rough * vh * vh;
     let shlick_nl = pow(clamp(1.0 - nl, 0.0, 1.0), 5.0);
     let shlick_nv = pow(clamp(1.0 - nv, 0.0, 1.0), 5.0);
     let kd = mix(d0, d90, shlick_nl) * mix(d0, d90, shlick_nv);
