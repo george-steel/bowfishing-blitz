@@ -14,7 +14,14 @@ struct ArrowVSIn {
 }
 
 struct ArrowVSOut {
+    @builtin(clip_distances) clip: array<f32, 1>,
     @builtin(position) clip_pos: vec4f,
+    @location(0) world_pos: vec3f,
+    @location(1) world_norm: vec3f,
+    @location(3) uv: vec2f,
+}
+
+struct ArrowFragIn {
     @location(0) world_pos: vec3f,
     @location(1) world_norm: vec3f,
     @location(3) uv: vec2f,
@@ -34,6 +41,7 @@ struct ArrowVSOut {
     let world_norm = norm_mat * vert.norm;
 
     var out: ArrowVSOut;
+    out.clip[0] = clip_dist(world_pos);
     out.clip_pos = clip_point(world_pos);
     out.world_pos = world_pos;
     out.world_norm = world_norm;
@@ -55,9 +63,7 @@ struct ArrowVSOut {
     return shadow_clip_point(world_pos);
 }
 
-@fragment fn arrow_frag(v: ArrowVSOut, @builtin(front_facing) is_forward: bool) -> GBufferPoint {
-    guard_frag(v.world_pos);
-
+@fragment fn arrow_frag(v: ArrowFragIn, @builtin(front_facing) is_forward: bool) -> GBufferPoint {
     let norm = normalize(v.world_norm) * select(-1.0, 1.0, is_forward);
 
     var albedo: vec4f;

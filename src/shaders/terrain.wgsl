@@ -16,7 +16,17 @@ struct TerrainParams {
 }
 
 struct TerrainVertexOut {
+    @builtin(clip_distances) clip: array<f32, 1>,
     @builtin(position) clip_pos: vec4f,
+    @location(0) world_pos: vec3f,
+    @location(1) uv: vec2f,
+}
+struct WaterVertexOut {
+    @builtin(position) clip_pos: vec4f,
+    @location(0) world_pos: vec3f,
+    @location(1) uv: vec2f,
+}
+struct TerrainFragIn {
     @location(0) world_pos: vec3f,
     @location(1) uv: vec2f,
 }
@@ -33,6 +43,7 @@ struct TerrainVertexOut {
     let world_pos = vec3f(xy, z);
 
     var out: TerrainVertexOut;
+    out.clip[0] = clip_dist(world_pos);
     out.clip_pos = clip_point(world_pos);
     out.world_pos = world_pos.xyz;
     out.uv = uv;
@@ -111,9 +122,7 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
     return params;
 }
 
-@fragment fn terrain_frag(v: TerrainVertexOut) -> GBufferPoint {
-    guard_frag(v.world_pos);
-
+@fragment fn terrain_frag(v: TerrainFragIn) -> GBufferPoint {
     let grad = terrain_grad(v.uv);
     let norm = normalize(vec3f(-grad, 1));
     let tan_x = normalize(vec3f(1, 0, grad.x));
@@ -147,23 +156,23 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
 }
 
 fn water_ripples(xy: vec2f) -> gradval {
-    return 0.015 * perlin_noise_deriv(xy + vec2f(0.1, -0.55) * camera.time, mat2x2f(0.8, -1.9, 3.8, 0.4), 1)
-        + 0.012 * perlin_noise_deriv(xy + vec2f(-0.05, 0.4) * camera.time, mat2x2f(3.5, 0.0, 0.0, 6.7), 0);
+    return 0.010 * perlin_noise_deriv(xy + vec2f(0.1, -0.55) * camera.time, mat2x2f(0.8, -1.9, 3.8, 0.4), 1)
+        + 0.007 * perlin_noise_deriv(xy + vec2f(-0.05, 0.4) * camera.time, mat2x2f(3.5, 0.0, 0.0, 6.7), 0);
 }
 
-@vertex fn water_quad(@builtin(vertex_index) vert_idx: u32) -> TerrainVertexOut {
+@vertex fn water_quad(@builtin(vertex_index) vert_idx: u32) -> WaterVertexOut {
     let ij = vec2u(vert_idx % 2, vert_idx / 2);
     let uv = tparams.radius * (2.0 * vec2f(ij) - 1.0);
     let world_pos = vec4f(uv, 0, 1);
 
-    var out: TerrainVertexOut;
+    var out: WaterVertexOut;
     out.clip_pos = camera.matrix * world_pos;
     out.world_pos = world_pos.xyz;
     out.uv = uv;
     return out;
 }
 
-@fragment fn water_frag(v: TerrainVertexOut) -> GBufferPoint {
+@fragment fn water_frag(v: TerrainFragIn) -> GBufferPoint {
     let ripple = water_ripples(v.world_pos.xy);
     let norm = normalize(vec3f(-ripple.xy, 1.0));
 

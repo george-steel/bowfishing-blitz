@@ -1,3 +1,5 @@
+enable clip_distances;
+
 const PI  = 3.1415926535;
 const TAU = 6.2831853072;
 
@@ -98,6 +100,23 @@ fn shadow_map_point(world_pos: vec3f) -> vec3f {
     let map_uv = clip_xy * vec2f(0.5, -0.5) + 0.5;
 
     return vec3f(map_uv, clip_z);
+}
+
+fn clip_dist(world_pos: vec3f) -> f32 {
+    switch PATH_ID {
+        case PATH_DIRECT{
+            return world_pos.z + 0.05;
+        }
+        case PATH_REFLECT {
+            return world_pos.z + 0.1;
+        }
+        case PATH_REFRACT {
+            return 0.05 - world_pos.z;
+        }
+        default {
+            return 1.0;
+        }
+    }
 }
 
 fn guard_frag(world_pos: vec3f) {
