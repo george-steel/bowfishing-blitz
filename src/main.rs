@@ -108,6 +108,13 @@ fn main() {
                             _ => {}
                         }
                     }
+                    WindowEvent::KeyboardInput { device_id: _, event: KeyEvent {
+                        physical_key: _, logical_key: Key::Character(c), text: _, location: _, state: _, repeat: _, ..
+                    }, is_synthetic: _ }=> {
+                        if c == "m" {
+                            ui_disp.stop_music(&mut audio);
+                        }
+                    }
                     WindowEvent::MouseInput {device_id: _, state: ElementState::Pressed, button: MouseButton::Left} => {
                         if window.has_focus() {
                             match game_state {

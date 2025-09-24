@@ -328,14 +328,7 @@ impl UIDisplay {
                 audio.play(self.small_bell_sound.clone());
             }
             (GameState::Title {..}, GameState::Fade {..}) => {
-                if let Some(audio_handle) = &mut self.playing_music {
-                    let _ = audio_handle.stop(Tween {
-                        start_time: kira::StartTime::Immediate,
-                        duration: Duration::from_millis(1000),
-                        easing: Easing::InOutPowf(2.0),
-                    });
-                }
-                self.playing_music = None;
+                self.stop_music(audio);
             }
             (GameState::Playing, GameState::Finish {..}) => {
                 if let Some(audio_handle) = &mut self.playing_music {
@@ -363,6 +356,17 @@ impl UIDisplay {
 
         self.old_state = new_state;
         self.updated_at = now;
+    }
+
+    pub fn stop_music(&mut self, audio: &mut AudioManager) {
+        if let Some(audio_handle) = &mut self.playing_music {
+            let _ = audio_handle.stop(Tween {
+                start_time: kira::StartTime::Immediate,
+                duration: Duration::from_millis(1000),
+                easing: Easing::InOutPowf(2.0),
+            });
+        }
+        self.playing_music = None;
     }
 }
 
