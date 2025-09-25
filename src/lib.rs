@@ -1,5 +1,5 @@
 use std::time::Instant;
-use kira::{manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings}, sound::streaming::{StreamingSoundData, StreamingSoundSettings}, Volume};
+use kira::{manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings}};
 use wgpu::{Surface, Texture};
 use glam::{UVec2, vec3};
 
@@ -31,7 +31,7 @@ pub struct GameSystem {
 }
 
 pub struct FrameResult {
-    should_release_cursor: bool,
+    pub should_release_cursor: bool,
 }
 
 impl GameSystem {

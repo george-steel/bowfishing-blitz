@@ -1,11 +1,9 @@
 // disable windows console on release build
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use bowfishing_blitz::{arrows::ArrowController, boat_rail::RailController, camera::*, deferred_renderer::*, gputil::*, targets::TargetController, ui::{GameState, UIDisplay}, *};
-use env_logger::init;
-use kira::{manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings}, sound::streaming::{StreamingSoundData, StreamingSoundSettings}, Volume};
+use std::time::{Duration};
 
-use std::time::{Duration, Instant};
+use bowfishing_blitz::{GameSystem, gputil::*};
 
 use glam::*;
 use winit::{
@@ -13,7 +11,7 @@ use winit::{
     event_loop::EventLoop,
     keyboard::{Key, NamedKey},
     platform::pump_events::{EventLoopExtPumpEvents, PumpStatus},
-    window::{CursorGrabMode, Window, WindowAttributes}
+    window::{CursorGrabMode, Window}
 };
 
 fn main() {
@@ -124,7 +122,11 @@ fn main() {
             }
         };
 
-        game.on_frame(&gpu, &surface_tex.texture);
+        let frame_result = game.on_frame(&gpu, &surface_tex.texture);
+        if frame_result.should_release_cursor {
+            let _ = window.set_cursor_grab(CursorGrabMode::None);
+            window.set_cursor_visible(true);
+        }
         surface_tex.present();
     }
 }
