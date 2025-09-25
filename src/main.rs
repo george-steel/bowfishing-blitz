@@ -37,27 +37,7 @@ fn main() {
     let mut size = window_size(&window);
     gpu.configure_surface_target(&surface, size);
 
-    let mut audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).unwrap();
-
-    let init_time = Instant::now();
-    let mut game_state = GameState::Title {started_at: init_time, is_restart: false };
-
-    let shadow_settings = ShadowSettings {
-        sun_dir: vec3(0.548, -0.380, 0.745),
-        range_xy: 60.0,
-        range_z: 10.0,
-    };
-
-    let mut camera = RailController::new(shadow_settings, init_time);
-    let mut renderer = DeferredRenderer::new(&gpu, &camera, size);
-
-    let terrain = terrain_view::HeightmapTerrain::load();
-    let mut terrain_view = crate::terrain_view::TerrainView::new(&gpu, &renderer, &terrain);
-
-    let mut arrows = ArrowController::new(&gpu, &renderer);
-    let mut targets = TargetController::new(&gpu, &renderer, &terrain);
-
-    let mut ui_disp = UIDisplay::new(&gpu, &renderer);
+    let mut game = GameSystem::new(&gpu, size);
 
     let window = &window;
     'mainloop: loop{
@@ -75,12 +55,7 @@ fn main() {
                     }
                     DeviceEvent::MouseMotion { delta: (dx, dy) } => {
                         if window.has_focus() {
-                            match game_state {
-                                GameState::Playing | GameState::Countdown {..} => {
-                                    camera.mouse(dx, dy);
-                                }
-                                _ => {}
-                            }
+                            game.on_mouse_move(dx, dy);
                         }
                     }
                     _ => {}
@@ -88,8 +63,6 @@ fn main() {
                 Event::WindowEvent {window_id: _, event,} => match event {
                     WindowEvent::Resized(new_size) => {
                         must_resize = Some(uvec2(new_size.width, new_size.height));
-                        //renderer.resize(&gpu, size);
-                        //gpu.configure_surface_target(&surface, size);
                         window.request_redraw();
                     }
                     WindowEvent::Focused(false) |
@@ -98,41 +71,21 @@ fn main() {
                     }, is_synthetic: _ }=> {
                         let _ = window.set_cursor_grab(CursorGrabMode::None);
                         window.set_cursor_visible(true);
-                        match game_state {
-                            GameState::Playing => {
-                                game_state = GameState::Paused;
-                            }
-                            GameState::Countdown {..} | GameState::Fade {..} => {
-                                game_state = GameState::Title {started_at: Instant::now(), is_restart: false};
-                            }
-                            _ => {}
-                        }
+                        game.on_cursor_ungrab();
                     }
                     WindowEvent::KeyboardInput { device_id: _, event: KeyEvent {
                         physical_key: _, logical_key: Key::Character(c), text: _, location: _, state: _, repeat: _, ..
                     }, is_synthetic: _ }=> {
                         if c == "m" {
-                            ui_disp.stop_music(&mut audio);
+                            game.stop_music();
                         }
                     }
                     WindowEvent::MouseInput {device_id: _, state: ElementState::Pressed, button: MouseButton::Left} => {
                         if window.has_focus() {
-                            match game_state {
-                                GameState::Playing => {
-                                    arrows.shoot(&mut audio, &camera);
-                                },
-                                GameState::Title {..} => {
-                                    let _ = window.set_cursor_grab(CursorGrabMode::Confined);
-                                    window.set_cursor_visible(false);
-                                    game_state = GameState::Fade { done_at: Instant::now() + GameState::FADE_DURATION }
-                                }
-                                GameState::Paused => {
-                                    let _ = window.set_cursor_grab(CursorGrabMode::Confined);
-                                    window.set_cursor_visible(false);
-                                    camera.unpause(Instant::now());
-                                    game_state = GameState::Playing
-                                }
-                                _ => {}
+                            let should_grab = game.on_click();
+                            if should_grab {
+                                let _ = window.set_cursor_grab(CursorGrabMode::Confined);
+                                window.set_cursor_visible(false);
                             }
                         }
                     }
@@ -155,8 +108,7 @@ fn main() {
         
         if let Some(new_size) = must_resize {
             drop(surface_result);
-            renderer.resize(&gpu, new_size);
-            gpu.configure_surface_target(&surface, new_size);
+            game.resize(&gpu, &surface, new_size);
             window.request_redraw();
             continue
         }
@@ -166,44 +118,13 @@ fn main() {
             Err(e) => {
                 log::error!("get_current_texture: {}", e);
                 size = window_size(&window);
-                renderer.resize(&gpu, size);
-                gpu.configure_surface_target(&surface, size);
+                game.resize(&gpu, &surface, size);
                 window.request_redraw();
                 continue
             }
         };
-        let now = Instant::now();
-        if game_state.should_reset_world(now) {
-            targets.reset(&terrain);
-            arrows.reset();
-            camera.reset(now, -GameState::COUNTDOWN_DURATION.as_secs_f64());
-        }
-        game_state.do_timeout(now);
 
-        // movement and hits continue after the finish to allow for buzzer beater shots
-        if !game_state.is_paused() {
-            let time = camera.tick(now);
-            if game_state.is_playing() && time >= GameState::GAME_PERIOD {
-                let _ = window.set_cursor_grab(CursorGrabMode::None);
-                window.set_cursor_visible(true);
-                game_state = GameState::Finish { done_at: now + GameState::FINISH_DURATION };
-            }
-
-            arrows.tick(time, &terrain, &mut audio, &mut [
-                &mut targets,
-            ]);
-            targets.tick(time);
-        }
-        ui_disp.tick(&mut audio, game_state, now, &camera, &arrows, &targets);
-
-        let out_view = surface_tex.texture.create_view(&Default::default());
-        renderer.render(&gpu, &out_view, &camera, &mut [
-            &mut terrain_view,
-            &mut arrows,
-            &mut targets,
-            &mut ui_disp,
-        ]);
+        game.on_frame(&gpu, &surface_tex.texture);
         surface_tex.present();
-        //window.request_redraw();
     }
 }
