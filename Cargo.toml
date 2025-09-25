@@ -8,15 +8,15 @@ default-run = "bowfishing_blitz"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytemuck = {version="1.23.1", features=["derive"]}
+bytemuck = {version="1.23.2", features=["derive"]}
 env_logger = "0.11.8"
-glam = {version="0.30.4", features=["bytemuck"]}
+glam = {version="0.30.7", features=["bytemuck"]}
 half = {version="2.6.0", features=["bytemuck"]}
-image = {version = "0.24.8", default_features=false, features=["png", "hdr"]}
-log = "0.4.27"
+image = {version = "0.24.8", default-features=false, features=["png", "hdr"]}
+log = "0.4.28"
 pollster = "0.4.0"
 wgpu = "26.0.1"
-winit = {version = "0.30.9", default_features = false, features = ["rwh_06", "x11"]}
+winit = {version = "0.30.12", default-features = false, features = ["rwh_06", "x11"]}
 rgbe = "0.0.2"
 rand = "0.9.2"
 kira = "0.8.7"
