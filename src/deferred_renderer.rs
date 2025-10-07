@@ -218,7 +218,7 @@ pub struct DeferredRenderer {
 }
 
 impl DeferredRenderer {
-    pub fn new(gpu: &GPUContext, camera_ctrl: &impl CameraController, output_size: UVec2) -> Box<Self> {
+    pub fn new(gpu: &GPUContext, assets: &impl AssetSource, camera_ctrl: &impl CameraController, output_size: UVec2) -> Box<Self> {
         let lighting_shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
             label: Some("lighting.wgsl"),
             source: ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::LIGHTING)),
@@ -495,12 +495,12 @@ impl DeferredRenderer {
             usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         });
 
-        let sky_tex = gpu.load_rgbe8_cube_texture("./assets/skybox.cube.rgbe8.png", 1).expect("Failed to load sky");
-        let above_radiance_tex = gpu.load_rgbe8_cube_texture("./assets/above-radiance.mipcube.rgbe8.png", 8).expect("Failed to load sky");
-        let above_irradiance_tex = gpu.load_rgbe8_cube_texture("./assets/above-irradiance.mipcube.rgbe8.png", 1).expect("Failed to load sky");
-        let below_radiance_tex = gpu.load_rgbe8_cube_texture("./assets/below-radiance.mipcube.rgbe8.png", 8).expect("Failed to load sky");
-        let below_irradiance_tex = gpu.load_rgbe8_cube_texture("./assets/below-irradiance.mipcube.rgbe8.png", 1).expect("Failed to load sky");
-        let dfg_lut_tex = gpu.load_png_texture::<u32>("./assets/dfg_integral_lut.rg16f.png", TextureFormat::Rg16Float).expect("Failed to load DFG");
+        let sky_tex = gpu.load_rgbe8_cube_texture(assets, "skybox.cube.rgbe8.png", 1).expect("Failed to load sky");
+        let above_radiance_tex = gpu.load_rgbe8_cube_texture(assets, "above-radiance.mipcube.rgbe8.png", 8).expect("Failed to load sky");
+        let above_irradiance_tex = gpu.load_rgbe8_cube_texture(assets, "above-irradiance.mipcube.rgbe8.png", 1).expect("Failed to load sky");
+        let below_radiance_tex = gpu.load_rgbe8_cube_texture(assets, "below-radiance.mipcube.rgbe8.png", 8).expect("Failed to load sky");
+        let below_irradiance_tex = gpu.load_rgbe8_cube_texture(assets, "below-irradiance.mipcube.rgbe8.png", 1).expect("Failed to load sky");
+        let dfg_lut_tex = gpu.load_png_texture::<u32>(assets, "dfg_integral_lut.rg16f.png", TextureFormat::Rg16Float).expect("Failed to load DFG");
 
         let lut_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             min_filter: wgpu::FilterMode::Linear,

@@ -35,7 +35,9 @@ fn main() {
     let mut size = window_size(&window);
     gpu.configure_surface_target(&surface, size);
 
-    let mut game = GameSystem::new(&gpu, size);
+    let assets = LocalAssetFolder::new("./assets");
+
+    let mut game = GameSystem::new(&gpu, size, &assets);
 
     let window = &window;
     'mainloop: loop{

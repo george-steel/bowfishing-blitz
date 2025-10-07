@@ -1,10 +1,9 @@
 use std::{default, io::Cursor, mem::size_of, sync::Arc, time::{Duration, Instant}, default::Default};
-use image::imageops::FilterType::Nearest;
-use kira::{manager::AudioManager, sound::{static_sound::{StaticSoundData, StaticSoundSettings}, streaming::{StreamingSoundData, StreamingSoundHandle, StreamingSoundSettings}, FromFileError}, tween::{Easing, Tween}, Volume};
+use kira::{manager::AudioManager, sound::{static_sound::{StaticSoundData}, streaming::{StreamingSoundData, StreamingSoundHandle, StreamingSoundSettings}, FromFileError}, tween::{Easing, Tween}, Volume};
 use wgpu::{util::{BufferInitDescriptor, DeviceExt}, *};
 use glam::*;
 
-use crate::{arrows::ArrowController, boat_rail::RailController, deferred_renderer::{DeferredRenderer, RenderObject}, gputil::{load_png, GPUContext}, targets::TargetController};
+use crate::{arrows::ArrowController, audio_util::load_static_sound, boat_rail::RailController, deferred_renderer::{DeferredRenderer, RenderObject}, gputil::{load_png, AssetSource, GPUContext}, targets::TargetController};
 
 // state machine for title screen, pausing, and restart
 #[derive(Clone, Copy, Debug)]
@@ -103,12 +102,12 @@ pub struct UIDisplay {
 }
 
 impl UIDisplay {
-    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer) -> Self {
-        let title_img = load_png::<u8>("./assets/title.sdf.png").unwrap();
+    pub fn new(gpu: &GPUContext, assets: &impl AssetSource, renderer: &DeferredRenderer) -> Self {
+        let title_img = load_png::<u8>(assets, "title.sdf.png").unwrap();
         let title_atlas = gpu.upload_texture_atlas("title_atlas", TextureFormat::R8Unorm, &title_img, 1);
-        let states_img = load_png::<u8>("./assets/states.sdf.png").unwrap();
+        let states_img = load_png::<u8>(assets, "states.sdf.png").unwrap();
         let states_atlas = gpu.upload_texture_atlas("states_atlas", TextureFormat::R8Unorm, &states_img, 4);
-        let numbers_img = load_png::<u8>("./assets/numbers.sdf.png").unwrap();
+        let numbers_img = load_png::<u8>(assets, "numbers.sdf.png").unwrap();
         let numbers_atlas = gpu.upload_texture_atlas("numbers_atlas", TextureFormat::R8Unorm, &numbers_img, 14);
 
         let bilinear_sampler = gpu.device.create_sampler(&SamplerDescriptor {
@@ -287,13 +286,10 @@ impl UIDisplay {
         });
 
 
-        let enc_music = std::fs::read("./assets/river_valley_breakdown.ogg").unwrap().into();
-        let small_bell_sound = StaticSoundData::from_file("./assets/small_bell.ogg",
-            StaticSoundSettings::default().volume(Volume::Decibels(0.0))).unwrap();
-        let big_bell_sound = StaticSoundData::from_file("./assets/big_bell.ogg",
-            StaticSoundSettings::default().volume(Volume::Decibels(0.0))).unwrap();
-        let whistle_sound = StaticSoundData::from_file("./assets/whistle.ogg",
-            StaticSoundSettings::default().volume(Volume::Decibels(0.0))).unwrap();
+        let enc_music = Arc::from(assets.get_bytes("river_valley_breakdown.ogg".as_ref()).unwrap());
+        let small_bell_sound = load_static_sound(assets, "small_bell.ogg", 0.0).unwrap();
+        let big_bell_sound = load_static_sound(assets, "big_bell.ogg", 0.0).unwrap();
+        let whistle_sound = load_static_sound(assets, "whistle.ogg", 0.0).unwrap();
 
         UIDisplay {
             text_pipeline, blackout_pipeline,

@@ -1,6 +1,7 @@
-use std::{fs::File, mem::size_of, path::Path};
+use std::{fs::File, io::{BufRead, BufReader, Read}, mem::size_of, path::{Path, PathBuf}};
 
 use image::{ImageDecoder, ImageError, ImageResult};
+use rgbe::{RGB9E5, RGBE8};
 use wgpu::BindGroupLayoutEntry;
 use winit::{dpi::PhysicalSize, window::Window};
 use bytemuck::{Pod, Zeroable};
@@ -63,34 +64,32 @@ impl GPUContext {
         surface.configure(&self.device, &surface_config);
     }
 
-    pub fn load_rgbe8_texture(&self, path: &str) -> ImageResult<wgpu::Texture> {
-        let (width, height, data) = rgbe::load_rgbe8_png_file_as_rgb9e5(Path::new(path.into()))?;
-        let img = PlanarImage {width: width as usize, height: height as usize, data};
+    pub fn load_rgbe8_texture(&self, source: &impl AssetSource, path: &str) -> ImageResult<wgpu::Texture> {
+        let img = load_rgbe8_png_as_9e5(source, path)?;
         let tex = self.upload_2d_texture(path, wgpu::TextureFormat::Rgb9e5Ufloat, &img);
         Ok(tex)
     }
 
-    pub fn load_rgbe8_cube_texture(&self, path: &str, num_levels: u32) -> ImageResult<wgpu::Texture> {
-        let (width, height, data) = rgbe::load_rgbe8_png_file_as_rgb9e5(Path::new(path.into()))?;
-        let img = PlanarImage {width: width as usize, height: height as usize, data};
+    pub fn load_rgbe8_cube_texture(&self, source: &impl AssetSource, path: &str, num_levels: u32) -> ImageResult<wgpu::Texture> {
+        let img = load_rgbe8_png_as_9e5(source, path)?;
         let tex = self.upload_texture_cube(path, wgpu::TextureFormat::Rgb9e5Ufloat, &img, num_levels);
         Ok(tex)
     }
 
-    pub fn load_r16f_texture(&self, path: &str) -> ImageResult<wgpu::Texture> {
-        let img = load_png::<u16>(path)?;
+    pub fn load_r16f_texture(&self, source: &impl AssetSource, path: &str) -> ImageResult<wgpu::Texture> {
+        let img = load_png::<u16>(source, path)?;
         let tex = self.upload_2d_texture(path, wgpu::TextureFormat::R16Float, &img);
         Ok(tex)
     }
 
-    pub fn load_r8_texture(&self, path: &str) -> ImageResult<wgpu::Texture> {
-        let img = load_png::<u8>(path)?;
+    pub fn load_r8_texture(&self, source: &impl AssetSource, path: &str) -> ImageResult<wgpu::Texture> {
+        let img = load_png::<u8>(source, path)?;
         let tex = self.upload_2d_texture(path, wgpu::TextureFormat::R8Unorm, &img);
         Ok(tex)
     }
 
-    pub fn load_png_texture<P: Pod + Zeroable>(&self, path: &str, format: wgpu::TextureFormat) -> ImageResult<wgpu::Texture> {
-        let img = load_png::<P>(path)?;
+    pub fn load_png_texture<P: Pod + Zeroable>(&self, source: &impl AssetSource, path: &str, format: wgpu::TextureFormat) -> ImageResult<wgpu::Texture> {
+        let img = load_png::<P>(source, path)?;
         let tex = self.upload_2d_texture(path, format, &img);
         Ok(tex)
     }
@@ -119,8 +118,8 @@ impl GPUContext {
         tex
     }
 
-    pub fn load_texture_make_mips<P: Pod + Zeroable>(&self, path: &str, format: wgpu::TextureFormat, num_mips: u32) -> ImageResult<wgpu::Texture> {
-        let img = load_png::<P>(path)?;
+    pub fn load_texture_make_mips<P: Pod + Zeroable>(&self, source: &impl AssetSource, path: &str, format: wgpu::TextureFormat, num_mips: u32) -> ImageResult<wgpu::Texture> {
+        let img = load_png::<P>(source, path)?;
         let texel_size = std::mem::size_of::<P>();
         if texel_size != format.block_copy_size(None).unwrap() as usize {
             panic!("texture format must have the same size as the data buffer element")
@@ -328,12 +327,54 @@ impl<P: Copy + Into<f32>> PlanarImage<P> {
     }
 }
 
-pub fn load_png<P: Pod + Zeroable>(path: impl AsRef<std::path::Path>) -> ImageResult<PlanarImage<P>> {
-    let file = File::open(path).map_err(ImageError::IoError)?;
-    let decoder = image::codecs::png::PngDecoder::new(file)?;
+pub fn load_png<P: Pod + Zeroable>(source: &impl AssetSource, path: impl AsRef<std::path::Path>) -> ImageResult<PlanarImage<P>> {
+    let stream = source.get_reader(path.as_ref()).map_err(ImageError::IoError)?;
+    let decoder = image::codecs::png::PngDecoder::new(stream)?;
     let (width, height) = decoder.dimensions();
     let size = (width * height) as usize;
     let mut out = bytemuck::allocation::zeroed_slice_box::<P>(size);
     decoder.read_image(bytemuck::cast_slice_mut(&mut out))?;
     Ok(PlanarImage{ width: width as usize, height: height as usize, data: out})
+}
+
+pub fn load_rgbe8_png_as_9e5(source: &impl AssetSource, path: impl AsRef<std::path::Path>) -> ImageResult<PlanarImage<RGB9E5>> {
+    let stream = source.get_reader(path.as_ref()).map_err(ImageError::IoError)?;
+    let decoder = image::codecs::png::PngDecoder::new(stream)?;
+    let (width, height) = decoder.dimensions();
+    let out = rgbe::decode_rgbe8_png_as_rgb9e5(decoder)?;
+    Ok(PlanarImage{ width: width as usize, height: height as usize, data: out})
+}
+
+pub trait AssetSource {
+    type Reader: BufRead;
+    fn get_reader(&self, path: &Path) -> std::io::Result<Self::Reader>;
+    fn get_bytes(&self, path: &Path) -> std::io::Result<Box<[u8]>>;
+}
+
+pub struct LocalAssetFolder {
+    pub base_path: PathBuf,
+}
+
+impl LocalAssetFolder {
+    pub fn new(path: impl AsRef<Path>) -> Self {
+        let base_path: &Path = path.as_ref();
+        LocalAssetFolder {
+            base_path: PathBuf::from(&base_path),
+        }
+    }
+}
+
+impl AssetSource for LocalAssetFolder {
+    type Reader = BufReader<File>;
+    fn get_reader(&self, path: &Path) -> std::io::Result<Self::Reader> {
+        let path: PathBuf = [&self.base_path, path].iter().collect();
+        let file = File::open(&path)?;
+        Ok(BufReader::new(file))
+    }
+
+    fn get_bytes(&self, path: &Path) -> std::io::Result<Box<[u8]>> {
+        let path: PathBuf = [&self.base_path, path].iter().collect();
+        let contents = std::fs::read(path)?;
+        Ok(contents.into_boxed_slice())
+    }
 }

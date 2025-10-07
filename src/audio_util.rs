@@ -1,5 +1,16 @@
+use std::{io::Cursor, path::Path};
+
 use kira::{sound::{static_sound::{StaticSoundData, StaticSoundSettings}, EndPosition, FromFileError, PlaybackPosition, Region}, Volume};
 use rand::Rng;
+
+use crate::gputil::AssetSource;
+
+pub fn load_static_sound(source: &impl AssetSource, path: impl AsRef<Path>, volume_db: f64) -> Result<StaticSoundData, FromFileError> {
+    let bytes = source.get_bytes(path.as_ref()).map_err(FromFileError::IoError)?;
+    let cursor = Cursor::new(bytes);
+    let settings = StaticSoundSettings::default().volume(Volume::Decibels(volume_db));
+    StaticSoundData::from_cursor(cursor, settings)
+}
 
 // Stores a set of effects packed into a single buffer
 #[derive(Clone, Debug)]
@@ -29,17 +40,15 @@ impl SoundAtlas {
         self.get_sound(n)
     }
 
-    pub fn load_with_starts(path: &str, volume_db: f64, starts: &[f64]) -> Result<Self, FromFileError> {
-        let sound = StaticSoundData::from_file(
-            path, StaticSoundSettings::default().volume(Volume::Decibels(volume_db)))?;
+    pub fn load_with_starts(source: &impl AssetSource, path: impl AsRef<Path>, volume_db: f64, starts: &[f64]) -> Result<Self, FromFileError> {
+        let sound = load_static_sound(source, path, volume_db)?;
         Ok(SoundAtlas {
             sound, start_positions: starts.to_vec().into_boxed_slice()
         })
     }
 
-    pub fn load_with_stride(path: &str, volume_db: f64, stride_s: f64) -> Result<Self, FromFileError> {
-        let sound = StaticSoundData::from_file(
-            path, StaticSoundSettings::default().volume(Volume::Decibels(volume_db)))?;
+    pub fn load_with_stride(source: &impl AssetSource, path: impl AsRef<Path>, volume_db: f64, stride_s: f64) -> Result<Self, FromFileError> {
+        let sound = load_static_sound(source, path, volume_db)?;
         let len_s = sound.duration().as_secs_f64();
         let mut starts = Vec::new();
         let mut t = 0.0;

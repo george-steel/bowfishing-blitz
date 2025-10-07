@@ -143,7 +143,7 @@ pub struct ArrowController {
 }
 
 impl ArrowController {
-    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer) -> Self {
+    pub fn new(gpu: &GPUContext, assets: &impl AssetSource, renderer: &DeferredRenderer) -> Self {
         let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
             label: Some("arrows.wgsl"),
             source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(crate::shaders::ARROWS)),
@@ -317,9 +317,9 @@ impl ArrowController {
         });
 
 
-        let release_sounds = SoundAtlas::load_with_stride("./assets/arrow_release.ogg", 5.0, 0.4).unwrap();
-        let thunk_sounds = SoundAtlas::load_with_stride("./assets/arrow_thunk.ogg", -3.0, 0.5).unwrap();
-        let splish_sounds = SoundAtlas::load_with_stride("./assets/water_splish.ogg", -2.0, 1.0).unwrap();
+        let release_sounds = SoundAtlas::load_with_stride(assets, "arrow_release.ogg", 5.0, 0.4).unwrap();
+        let thunk_sounds = SoundAtlas::load_with_stride(assets, "arrow_thunk.ogg", -3.0, 0.5).unwrap();
+        let splish_sounds = SoundAtlas::load_with_stride(assets, "water_splish.ogg", -2.0, 1.0).unwrap();
 
         let dead_arrows = bytemuck::zeroed_slice_box(MAX_DEAD_ARROWS);
         ArrowController {

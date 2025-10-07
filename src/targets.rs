@@ -160,7 +160,7 @@ impl TargetController {
         targets.into_boxed_slice()
     }
 
-    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer, terrain: &HeightmapTerrain) -> Self {
+    pub fn new(gpu: &GPUContext, assets: &impl AssetSource, renderer: &DeferredRenderer, terrain: &HeightmapTerrain) -> Self {
         let all_targets = Self::gen_targets(NUM_TARGETS, terrain, 40.0);
 
         let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
@@ -314,8 +314,8 @@ impl TargetController {
             ..wgpu::SamplerDescriptor::default()
         });
 
-        let pot_co_tex = gpu.load_texture_make_mips::<u32>("./assets/pot-co.png", TextureFormat::Rgba8UnormSrgb, 4).unwrap();
-        let pot_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/pot-nr.png", TextureFormat::Rgba8Unorm, 4).unwrap();
+        let pot_co_tex = gpu.load_texture_make_mips::<u32>(assets, "pot-co.png", TextureFormat::Rgba8UnormSrgb, 4).unwrap();
+        let pot_nr_tex = gpu.load_texture_make_mips::<u32>(assets, "pot-nr.png", TextureFormat::Rgba8Unorm, 4).unwrap();
 
         let targets_bg = gpu.device.create_bind_group(&BindGroupDescriptor {
             label: Some("pots_bg"),
@@ -337,7 +337,7 @@ impl TargetController {
             ]
         });
 
-        let smash_sounds = SoundAtlas::load_with_starts("./assets/glass_smash.ogg", -3.0,
+        let smash_sounds = SoundAtlas::load_with_starts(assets, "glass_smash.ogg", -3.0,
             &[0.0, 1.57, 2.84, 4.02, 5.43, 6.98, 8.38, 9.68, 10.97, 12.32, 13.58, 15.30, 16.73, 18.12]).unwrap();
 
         TargetController {

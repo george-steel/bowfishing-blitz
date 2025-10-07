@@ -17,10 +17,10 @@ pub struct HeightmapTerrain {
 }
 
 impl HeightmapTerrain {
-    pub fn load() -> Self {
+    pub fn load(assets: &impl AssetSource) -> Self {
         let radius = 60.0;
         let z_scale = 1.0;
-        let heightmap = load_png::<f16>(Path::new("./assets/terrain_heightmap.png")).expect("Failed to load terrain");
+        let heightmap = load_png::<f16>(assets, Path::new("terrain_heightmap.png")).expect("Failed to load terrain");
         HeightmapTerrain { radius, z_scale, heightmap}
     }
 
@@ -68,7 +68,7 @@ pub struct TerrainView {
 }
 
 impl TerrainView {
-    pub fn new(gpu: &GPUContext, renderer: &DeferredRenderer, terrain: &HeightmapTerrain) -> Self {
+    pub fn new(gpu: &GPUContext, assets: &impl AssetSource, renderer: &DeferredRenderer, terrain: &HeightmapTerrain) -> Self {
         let bg_layout = gpu.device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor{
             label: Some("Terrain Uniforms"),
             entries: &[
@@ -287,12 +287,12 @@ impl TerrainView {
             ..wgpu::SamplerDescriptor::default()
         });
 
-        let grass_co_tex = gpu.load_texture_make_mips::<u32>("./assets/grass.co.png", TextureFormat::Rgba8UnormSrgb, 7).unwrap();
-        let grass_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/grass.nr.png", TextureFormat::Rgba8Unorm, 7).unwrap();
-        let dirt_co_tex = gpu.load_texture_make_mips::<u32>("./assets/dirt.co.png", TextureFormat::Rgba8UnormSrgb, 7).unwrap();
-        let dirt_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/dirt.nr.png", TextureFormat::Rgba8Unorm, 7).unwrap();
-        let rock_co_tex = gpu.load_texture_make_mips::<u32>("./assets/rock.co.png", TextureFormat::Rgba8UnormSrgb, 7).unwrap();
-        let rock_nr_tex = gpu.load_texture_make_mips::<u32>("./assets/rock.nr.png", TextureFormat::Rgba8Unorm, 7).unwrap();
+        let grass_co_tex = gpu.load_texture_make_mips::<u32>(assets, "grass.co.png", TextureFormat::Rgba8UnormSrgb, 7).unwrap();
+        let grass_nr_tex = gpu.load_texture_make_mips::<u32>(assets, "grass.nr.png", TextureFormat::Rgba8Unorm, 7).unwrap();
+        let dirt_co_tex = gpu.load_texture_make_mips::<u32>(assets, "dirt.co.png", TextureFormat::Rgba8UnormSrgb, 7).unwrap();
+        let dirt_nr_tex = gpu.load_texture_make_mips::<u32>(assets, "dirt.nr.png", TextureFormat::Rgba8Unorm, 7).unwrap();
+        let rock_co_tex = gpu.load_texture_make_mips::<u32>(assets, "rock.co.png", TextureFormat::Rgba8UnormSrgb, 7).unwrap();
+        let rock_nr_tex = gpu.load_texture_make_mips::<u32>(assets, "rock.nr.png", TextureFormat::Rgba8Unorm, 7).unwrap();
         
 
         let terrain_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {

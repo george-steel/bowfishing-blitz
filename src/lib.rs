@@ -3,7 +3,7 @@ use kira::{manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings
 use wgpu::{Surface, Texture};
 use glam::{UVec2, vec3};
 
-use crate::{arrows::ArrowController, boat_rail::RailController, camera::ShadowSettings, deferred_renderer::DeferredRenderer, targets::TargetController, terrain_view::{HeightmapTerrain, TerrainView}, ui::{GameState, UIDisplay}};
+use crate::{arrows::ArrowController, boat_rail::RailController, camera::ShadowSettings, deferred_renderer::DeferredRenderer, gputil::AssetSource, targets::TargetController, terrain_view::{HeightmapTerrain, TerrainView}, ui::{GameState, UIDisplay}};
 
 pub mod gputil;
 pub mod terrain_view;
@@ -35,7 +35,7 @@ pub struct FrameResult {
 }
 
 impl GameSystem {
-    pub fn new(gpu: &GPUContext, size: UVec2) -> Self {
+    pub fn new(gpu: &GPUContext, size: UVec2, assets: &impl AssetSource) -> Self {
         let audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).unwrap();
 
         let init_time = Instant::now();
@@ -48,15 +48,15 @@ impl GameSystem {
         };
 
         let camera = RailController::new(shadow_settings, init_time);
-        let renderer = DeferredRenderer::new(&gpu, &camera, size);
+        let renderer = DeferredRenderer::new(&gpu, assets, &camera, size);
 
-        let terrain = terrain_view::HeightmapTerrain::load();
-        let terrain_view = crate::terrain_view::TerrainView::new(&gpu, &renderer, &terrain);
+        let terrain = terrain_view::HeightmapTerrain::load(assets);
+        let terrain_view = crate::terrain_view::TerrainView::new(&gpu, assets, &renderer, &terrain);
 
-        let arrows = ArrowController::new(&gpu, &renderer);
-        let targets = TargetController::new(&gpu, &renderer, &terrain);
+        let arrows = ArrowController::new(&gpu, assets, &renderer);
+        let targets = TargetController::new(&gpu, assets, &renderer, &terrain);
 
-        let ui_disp = UIDisplay::new(&gpu, &renderer);
+        let ui_disp = UIDisplay::new(&gpu, assets, &renderer);
 
         GameSystem {
             audio,
