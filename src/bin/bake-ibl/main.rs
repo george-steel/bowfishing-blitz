@@ -1,4 +1,4 @@
-use bowfishing_blitz::*;
+use bowfishing_blitz::{gputil::asset::LocalAssetFolder, *};
 use gputil::*;
 use camera::*;
 use wgpu::{wgt::TextureViewDescriptor, Features, TextureViewDimension};
@@ -58,7 +58,9 @@ fn main() {
 
     let dfg_tables = dfg_baker.integrate_dfg_lut(&gpu);
 
-    let raw_sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_2k.rgbe.png").expect("Failed to load sky");
+    let assets = LocalAssetFolder::new("./assets/staging");
+
+    let raw_sky_tex = gpu.load_rgbe8_texture(&assets, "kloofendal_48d_partly_cloudy_2k.rgbe.png").expect("Failed to load sky");
     let raw_sky_view = raw_sky_tex.create_view(&Default::default());
 
     let clamped_tex = water_baker.render_clamp(&gpu, &raw_sky_view);
@@ -74,7 +76,7 @@ fn main() {
     let below_view = below_tex.create_view(&Default::default());
     let (below_cube, _) = baker.bake_maps(&gpu, &below_view, Some("below"));
 
-    let sky_tex = gpu.load_rgbe8_texture("./assets/staging/kloofendal_48d_partly_cloudy_puresky_2k.rgbe.png").expect("Failed to load sky");
+    let sky_tex = gpu.load_rgbe8_texture(&assets, "kloofendal_48d_partly_cloudy_puresky_2k.rgbe.png").expect("Failed to load sky");
     let sky_view = sky_tex.create_view(&Default::default());
     baker.bake_cube(&gpu, &sky_view, "skybox", 512);
 

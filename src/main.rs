@@ -3,7 +3,7 @@
 
 use std::time::{Duration};
 
-use bowfishing_blitz::{GameSystem, gputil::*};
+use bowfishing_blitz::{GameSystem, gputil::{asset::LocalAssetFolder, *}};
 
 use glam::*;
 use winit::{
