@@ -3,6 +3,9 @@ use kira::{manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings
 use wgpu::{Surface, Texture};
 use glam::{UVec2, vec3};
 
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen::prelude::*;
+
 use crate::{arrows::ArrowController, boat_rail::RailController, camera::ShadowSettings, deferred_renderer::DeferredRenderer, gputil::AssetSource, targets::TargetController, terrain_view::{HeightmapTerrain, TerrainView}, ui::{GameState, UIDisplay}};
 
 pub mod gputil;
@@ -151,4 +154,11 @@ impl GameSystem {
 
         FrameResult {should_release_cursor}
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(start)]
+pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {
+    console_error_panic_hook::set_once();
+    Ok(())
 }

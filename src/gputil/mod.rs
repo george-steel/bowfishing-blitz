@@ -17,6 +17,7 @@ pub struct GPUContext {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub output_format: wgpu::TextureFormat,
+    pub mip_maker: mip::MipMaker
 }
 
 
@@ -51,8 +52,10 @@ impl GPUContext {
         };
         log::info!("Using output format {:?}", output_format);
 
+        let mip_maker = mip::MipMaker::new(&device);
+
         GPUContext {
-            instance, adapter, device, queue, output_format
+            instance, adapter, device, queue, output_format, mip_maker
         }
     }
 
@@ -143,7 +146,7 @@ impl GPUContext {
             wgpu::TexelCopyBufferLayout{offset: 0, bytes_per_row: Some((texel_size * img.width) as u32), rows_per_image: Some(img.height as u32)},
             size);
         
-        mip::MipMaker::get(&self).make_mips(&self, &tex);
+        self.mip_maker.make_mips(&self, &tex);
         Ok(tex)
     }
 

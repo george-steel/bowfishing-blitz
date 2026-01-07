@@ -44,18 +44,13 @@ pub struct MipMaker {
 }
 
 impl MipMaker {
-    fn new(gpu: &GPUContext) -> Self {
-        let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
+    pub fn new(device: &wgpu::Device) -> Self {
+        let shaders = device.create_shader_module(ShaderModuleDescriptor{
             label: Some("mip.wgsl"),
             source: ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::MIP)),
         });
 
         Self {shaders}
-    }
-
-    pub fn get(gpu: &GPUContext) -> &'static Self {
-        static INST: OnceLock<MipMaker> = OnceLock::new();
-        INST.get_or_init(||{Self::new(gpu)})
     }
 
     // largely copied from wgpu documentation
