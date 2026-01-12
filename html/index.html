@@ -49,7 +49,7 @@ async function run() {
             const canvas = entry.target;
             canvas.width = Math.max(1, Math.min(width, 4096));
             canvas.height = Math.max(1, Math.min(height, 4096));
-            game.resize(width, height);
+            game.resize(width, height); // resize the gbuffers
         }
     });
     try {
@@ -69,10 +69,18 @@ async function run() {
             game.on_cursor_ungrab();
         }
     }
+    document.onpointerlockerror = e => {
+        game.on_cursor_ungrab();
+    }
     canvas.onclick = e => {
         const shouldGrab = game.on_click();
         if (shouldGrab) {
-            canvas.requestPointerLock();
+            const lock_promise = canvas.requestPointerLock();
+            if (lock_promise) {
+                lock_promise.catch(() => game.on_cursor_ungrab())
+            } else {
+                game.on_cursor_ungrab();
+            }
         }
     }
     document.onkeydown = e => {
@@ -86,8 +94,17 @@ async function run() {
         }
     }
     
+    let frame_count = 0;
+    let old_frame_time = performance.now();
 
     function frame() {
+        if (++frame_count >= 600) {
+            const new_time = performance.now();
+            const fps = 600 * 1000 / (new_time - old_frame_time);
+            console.log("FPS:", fps);
+            old_frame_time = new_time;
+            frame_count = 0;
+        }
         const result = game.on_frame();
         if (result.need_resize) {
             game.resize(width, height);
