@@ -1,0 +1,1 @@
+../pkg/bowfishing_blitz.js
