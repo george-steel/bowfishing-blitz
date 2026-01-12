@@ -206,6 +206,7 @@ pub struct DeferredRenderer {
     gbuffer_bind_layout: BindGroupLayout,
     gbuffer_bind_group: BindGroup,
     water_sampler: Sampler,
+    water_dist_sampler: Sampler,
     shadow_sampler: Sampler,
     water_gbuffer_bind_layout: BindGroupLayout,
     water_trans_gbuffer_bind_group: BindGroup,
@@ -253,6 +254,11 @@ impl DeferredRenderer {
             ],
         });
 
+        #[cfg(not(target_arch = "wasm32"))]
+        let depth_binding_type = SamplerBindingType::Filtering;
+        #[cfg(target_arch = "wasm32")]
+        let depth_binding_type = SamplerBindingType::NonFiltering;
+
         let gbuffer_bind_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("gbuffer_bind_layout"),
             entries: &[
@@ -292,7 +298,7 @@ impl DeferredRenderer {
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 7, // bilinear for water transmission
+                    binding: 7, // shadow map
                     ty: BindingType::Sampler(SamplerBindingType::Comparison),
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
@@ -317,8 +323,13 @@ impl DeferredRenderer {
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
                 BindGroupLayoutEntry{
-                    binding: 12, // shadow map
+                    binding: 12, // bilinear for water transmission
                     ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                    visibility: ShaderStages::FRAGMENT, count: None,
+                },
+                BindGroupLayoutEntry{
+                    binding: 13, // bilinear for water transmission
+                    ty: BindingType::Sampler(depth_binding_type),
                     visibility: ShaderStages::FRAGMENT, count: None,
                 },
             ]
@@ -340,6 +351,20 @@ impl DeferredRenderer {
             min_filter: FilterMode::Linear,
             ..Default::default()
         });
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let water_dist_sampler = water_sampler.clone();
+        #[cfg(target_arch = "wasm32")]
+        let water_dist_sampler = gpu.device.create_sampler(&SamplerDescriptor {
+            label: Some("water_sampler"),
+            address_mode_u: AddressMode::ClampToEdge,
+            address_mode_v: AddressMode::ClampToEdge,
+            min_filter: FilterMode::Nearest,
+            mag_filter: FilterMode::Nearest,
+            ..Default::default()
+        });
+
+
         let gbuffer_bind_group = gpu.device.create_bind_group(&BindGroupDescriptor{
             label: Some("gbuffer_bind_group"),
             layout: &gbuffer_bind_layout,
@@ -357,6 +382,7 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 10, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_view)},
                 BindGroupEntry {binding: 11, resource: wgpu::BindingResource::TextureView(&gbuffers.water_refl_dist_view)},
                 BindGroupEntry {binding: 12, resource: wgpu::BindingResource::Sampler(&water_sampler)},
+                BindGroupEntry {binding: 13, resource: wgpu::BindingResource::Sampler(&water_dist_sampler)},
             ]
         });
 
@@ -662,7 +688,7 @@ impl DeferredRenderer {
             main_camera_buf, camera,
             global_lighting,
 
-            gbuffer_bind_layout, gbuffer_bind_group, water_sampler, shadow_sampler,
+            gbuffer_bind_layout, gbuffer_bind_group, water_sampler, water_dist_sampler, shadow_sampler,
             water_gbuffer_bind_layout, water_trans_gbuffer_bind_group, water_refl_gbuffer_bind_group,
             above_lighting_bind_group, below_lighting_bind_group,
             lighting_pipeline, underwater_lighting_pipeline, reflected_lighting_pipeline,
@@ -691,6 +717,7 @@ impl DeferredRenderer {
                 BindGroupEntry {binding: 10, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_view)},
                 BindGroupEntry {binding: 11, resource: wgpu::BindingResource::TextureView(&self.gbuffers.water_refl_dist_view)},
                 BindGroupEntry {binding: 12, resource: wgpu::BindingResource::Sampler(&self.water_sampler)},
+                BindGroupEntry {binding: 13, resource: wgpu::BindingResource::Sampler(&self.water_dist_sampler)},
             ]
         });
 

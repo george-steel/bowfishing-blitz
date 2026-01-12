@@ -2,7 +2,7 @@ use std::{borrow::Cow, fs::File, io::{BufRead, BufReader, Read}, mem::size_of, p
 
 use image::{ImageDecoder, ImageError, ImageResult};
 use rgbe::{RGB9E5, RGBE8};
-use wgpu::BindGroupLayoutEntry;
+use wgpu::{BindGroupLayoutEntry, TextureFormat};
 use winit::{dpi::PhysicalSize, window::Window};
 use bytemuck::{Pod, Zeroable};
 use glam::*;
@@ -17,6 +17,7 @@ pub struct GPUContext {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub output_format: wgpu::TextureFormat,
+    pub output_raw_format: wgpu::TextureFormat,
     pub mip_maker: mip::MipMaker
 }
 
@@ -39,9 +40,9 @@ impl GPUContext {
             trace: wgpu::Trace::Off,
         })
         .await
-        .expect("Failed to create device");
+        .expect("Failed to create device");        
 
-        let output_format = match for_surface {
+        let output_raw_format = match for_surface {
             None => wgpu::TextureFormat::Rgba8UnormSrgb,
             Some(surface) => {
                 let surface_caps = surface.get_capabilities(&adapter);
@@ -50,20 +51,26 @@ impl GPUContext {
                     .next().unwrap_or(surface_caps.formats[0])
             },
         };
-        log::info!("Using output format {:?}", output_format);
+        log::info!("Using output format {:?}", output_raw_format);
+        let output_format = match output_raw_format {
+            TextureFormat::Rgba8Unorm => TextureFormat::Rgba8UnormSrgb,
+            TextureFormat::Bgra8Unorm => TextureFormat::Bgra8UnormSrgb,
+            x => x,
+        };
 
         let mip_maker = mip::MipMaker::new(&device);
 
         GPUContext {
-            instance, adapter, device, queue, output_format, mip_maker
+            instance, adapter, device, queue, output_format, output_raw_format, mip_maker
         }
     }
 
     pub fn configure_surface_target(&self, surface: &wgpu::Surface, size: UVec2) {
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: self.output_format,
+            format: self.output_raw_format,
             present_mode: wgpu::PresentMode::Fifo,
+            view_formats: vec![self.output_format],
             ..surface.get_default_config(&self.adapter, size.x.max(1), size.y.max(1)).unwrap()
         };
         surface.configure(&self.device, &surface_config);

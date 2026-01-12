@@ -108,6 +108,7 @@ fn ibl_illumination(to_eye: vec3f, normal: vec3f, rough: f32, metal: f32, albedo
 @group(1) @binding(10) var refl_buf: texture_2d<f32>;
 @group(1) @binding(11) var refl_dist_buf: texture_depth_2d;
 @group(1) @binding(12) var water_sampler: sampler;
+@group(1) @binding(13) var water_dist_sampler: sampler;
 
 @fragment fn do_global_lighting(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let px = vec2i(floor(pos.xy));
@@ -136,7 +137,7 @@ fn ibl_illumination(to_eye: vec3f, normal: vec3f, rough: f32, metal: f32, albedo
         let corr_xy = length(look_dir.xy) / length(refr_up.xy);
         let corr_z = look_dir.z / refr_up.z;
         let virt_trans_dir = normalize(vec3f(refr_norm.xy * corr_xy, refr_norm.z * corr_z)); // in planar-refracted space
-        let uw_dist_val = textureSampleLevel(trans_dist_buf, water_sampler, uv, 0);
+        let uw_dist_val = textureSampleLevel(trans_dist_buf, water_dist_sampler, uv, 0);
         let uw_dist = length(world_pos - camera.eye) * (dist_val / uw_dist_val - 1.0);
         let refr_point = world_pos + uw_dist * virt_trans_dir; // CSPR on
         //let refr_point = world_pos + uw_dist * normalize(look_dir + 0.75 * (refr_norm - refr_up)); // CSPR off
@@ -148,7 +149,7 @@ fn ibl_illumination(to_eye: vec3f, normal: vec3f, rough: f32, metal: f32, albedo
         let trans = textureSampleLevel(trans_buf, water_sampler, refr_uv1, 0.0).xyz;
 
         // reflected color
-        let refl_dist_val = max(textureSampleLevel(refl_dist_buf, water_sampler, uv, 0), 1e-4);
+        let refl_dist_val = max(textureSampleLevel(refl_dist_buf, water_dist_sampler, uv, 0), 1e-4);
         let refl_dist = length(world_pos - camera.eye) * (dist_val / refl_dist_val - 1.0);
         let refl_norm = reflect(look_dir, normal);
         let virt_refl_dir = vec3f(refl_norm.xy, -refl_norm.z);

@@ -1,7 +1,7 @@
 use std::borrow::Borrow;
 use web_time::Instant;
 use kira::{manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings}};
-use wgpu::{Surface, Texture};
+use wgpu::{Surface, Texture, wgt::TextureViewDescriptor};
 use glam::{UVec2, vec3};
 
 #[cfg(target_arch = "wasm32")]
@@ -101,7 +101,10 @@ impl GameSystem {
         }
         self.ui_disp.tick(&mut self.audio, self.game_state, now, &self.camera, &self.arrows, &self.targets);
 
-        let out_view = output.create_view(&Default::default());
+        let out_view = output.create_view(&TextureViewDescriptor{
+            format: Some(self.gpu.output_format),
+            ..Default::default()
+        });
         self.renderer.render(&self.gpu, &out_view, &self.camera, &mut [
             &mut self.terrain_view,
             &mut self.arrows,

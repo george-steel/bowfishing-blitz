@@ -16,7 +16,7 @@ struct SDFTextParams {
 
 struct TextVSOut {
     @builtin(position) clip_pos: vec4f,
-    @location(0) inst_idx: u32,
+    @interpolate(flat) @location(0) inst_idx: u32,
     @location(1) uv: vec2f,
 }
 
