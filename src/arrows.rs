@@ -348,7 +348,7 @@ impl ArrowController {
         self.updated_at = 0.0;
     }
 
-    pub fn shoot(&mut self, audio: &mut AudioManager, camera: &impl CameraController) {
+    pub fn shoot(&mut self, audio: Option<&mut AudioManager>, camera: &impl CameraController) {
         self.arrows_shot += 1;
         let eye = camera.eye();
         let start_pos = eye - vec3(0.0, 0.0, 0.08);
@@ -373,10 +373,12 @@ impl ArrowController {
             }
             self.live_arrows[imax] = arrow;
         }
-        audio.play(self.release_sounds.random_sound()).unwrap();
+        if let Some(audio) = audio {
+            audio.play(self.release_sounds.random_sound()).unwrap();
+        }
     }
 
-    pub fn tick(&mut self, time: f64, terrain: &HeightmapTerrain, audio: &mut AudioManager, targets: &mut[&mut dyn ArrowTarget]) -> bool {
+    pub fn tick(&mut self, time: f64, terrain: &HeightmapTerrain, mut audio: Option<&mut AudioManager>, targets: &mut[&mut dyn ArrowTarget]) -> bool {
         if time <= 0.0 {
             return false
         }
@@ -423,7 +425,9 @@ impl ArrowController {
                             self.next_dead_arrow = (self.next_dead_arrow + 1) % MAX_DEAD_ARROWS;
                             self.num_dead_arrows = MAX_DEAD_ARROWS.min(self.num_dead_arrows + 1);
 
-                            audio.play(self.thunk_sounds.random_sound()).unwrap();
+                            if let Some(audio) = &mut audio {
+                                audio.play(self.thunk_sounds.random_sound()).unwrap();
+                            }
                             break;
                         }
                         last_height = h;
@@ -434,7 +438,9 @@ impl ArrowController {
             live_arrow.end_pos = new_pos;
 
             if old_pos.z > 0.0 && new_pos.z <= 0.0 {
-                audio.play(self.splish_sounds.random_sound()).unwrap();
+                if let Some(audio) = &mut audio {
+                    audio.play(self.splish_sounds.random_sound()).unwrap();
+                }
                 if self.all_splishes.len() >= MAX_SPLISHES {
                     self.all_splishes.pop_front();
                 }
@@ -445,7 +451,7 @@ impl ArrowController {
             }
 
             for target in targets.iter_mut() {
-                let hit_target =  target.process_hits(audio, old_pos, new_pos);
+                let hit_target =  target.process_hits(audio.as_deref_mut(), old_pos, new_pos);
                 did_hit = did_hit || hit_target;
             }
 
@@ -525,7 +531,7 @@ impl RenderObject for ArrowController {
 }
 
 pub trait ArrowTarget {
-    fn process_hits(&mut self, audio: &mut AudioManager, start: Vec3, end: Vec3) -> bool;
+    fn process_hits(&mut self, audio: Option<&mut AudioManager>, start: Vec3, end: Vec3) -> bool;
 }
 
 pub fn collide_ray_sphere(start: Vec3, end: Vec3, center: Vec3, radius: f32) -> bool {

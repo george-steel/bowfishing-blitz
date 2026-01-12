@@ -309,19 +309,20 @@ impl UIDisplay {
         }
     }
 
-    pub fn tick(&mut self, audio: &mut AudioManager, new_state: GameState, now: Instant, camera: &RailController, arrows: &ArrowController, targets: &TargetController) {
+    pub fn tick(&mut self, audio: Option<&mut AudioManager>, new_state: GameState, now: Instant, camera: &RailController, arrows: &ArrowController, targets: &TargetController) {
         
 
         // state transition audio
-        match (self.old_state, new_state) {
+        if let Some(audio) = audio { match (self.old_state, new_state) {
             (GameState::Countdown {..}, GameState::Playing) => {
+
                 let sound_handle = audio.play(self.music.clone()).unwrap();
                 self.playing_music = Some(sound_handle);
                 audio.play(self.big_bell_sound.clone());
                 audio.play(self.small_bell_sound.clone());
             }
             (GameState::Title {..}, GameState::Fade {..}) => {
-                self.stop_music(audio);
+                self.stop_music();
             }
             (GameState::Playing, GameState::Finish {..}) => {
                 if let Some(audio_handle) = &mut self.playing_music {
@@ -341,7 +342,7 @@ impl UIDisplay {
                 }
             }
             _ => {}
-        };
+        }};
         self.cycle_time = camera.current_time;
         self.arrows_shot = arrows.arrows_shot;
         self.targets_hit = targets.targets_hit;
@@ -351,7 +352,7 @@ impl UIDisplay {
         self.updated_at = now;
     }
 
-    pub fn stop_music(&mut self, audio: &mut AudioManager) {
+    pub fn stop_music(&mut self) {
         if let Some(audio_handle) = &mut self.playing_music {
             let _ = audio_handle.stop(Tween {
                 start_time: kira::StartTime::Immediate,

@@ -1,6 +1,23 @@
 <!DOCTYPE html>
 <html>
 <head>
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+}
+#canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+}
+h1, h2 {
+    text-align: center;
+}
+</style>
 
 <script type="module">
 import init, {GameSystem} from "./pkg/bowfishing_blitz.js";
@@ -20,8 +37,66 @@ async function run() {
     let game = await GameSystem.init_from_canvas(canvas, bundle_view);
     console.log("Game initialized");
 
-    game.on_frame();
+    let width = canvas.width;
+    let height = canvas.height;
+
+    const observer = new ResizeObserver(entries => {
+        for (const entry of entries) {
+            width = entry.devicePixelContentBoxSize?.[0].inlineSize ||
+                    entry.contentBoxSize[0].inlineSize * devicePixelRatio;
+            height = entry.devicePixelContentBoxSize?.[0].blockSize ||
+                     entry.contentBoxSize[0].blockSize * devicePixelRatio;
+            const canvas = entry.target;
+            canvas.width = Math.max(1, Math.min(width, 4096));
+            canvas.height = Math.max(1, Math.min(height, 4096));
+            game.resize(width, height);
+        }
+    });
+    try {
+        observer.observe(canvas, { box: 'device-pixel-content-box' });
+    } catch {
+        observer.observe(canvas, { box: 'content-box' });
+    }
+
+    let total_x = 0;
+
+    canvas.onmousemove = e => {
+        total_x += e.movementX;
+        game.on_mouse_move(e.movementX, e.movementY);
+    }
+    document.onpointerlockchange = e => {
+        if (!document.pointerLockElement) {
+            game.on_cursor_ungrab();
+        }
+    }
+    canvas.onclick = e => {
+        const shouldGrab = game.on_click();
+        if (shouldGrab) {
+            canvas.requestPointerLock();
+        }
+    }
+    document.onkeydown = e => {
+        if (e.key == "Escape") {
+            document.exitPointerLock();
+        } else if (e.key == "m") {
+            game.stop_music();
+        } else if (e.key == "p") {
+            console.log("horiz movement", total_x);
+            total_x = 0;
+        }
+    }
+    
+
+    function frame() {
+        const result = game.on_frame();
+        if (result.need_resize) {
+            game.resize(width, height);
+        }
+        requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
 }
+
 if (navigator.gpu) {
     run();
 } else {
@@ -32,6 +107,6 @@ if (navigator.gpu) {
 </script>
 </head>
 <body>
-<canvas id="canvas" width="800" height="600" style="width: 100%; height: 100%;" >
+<canvas id="canvas" width="800" height="600"></canvas>
 </body>
 </html>

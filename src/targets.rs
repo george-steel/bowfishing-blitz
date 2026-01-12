@@ -412,7 +412,7 @@ impl RenderObject for TargetController {
 }
 
 impl ArrowTarget for TargetController {
-    fn process_hits(&mut self, audio: &mut AudioManager, start: Vec3, end: Vec3) -> bool {
+    fn process_hits(&mut self, mut audio: Option<&mut AudioManager>, start: Vec3, end: Vec3) -> bool {
         let mut was_hit = false;
 
         for t in self.all_targets.iter_mut() {
@@ -423,7 +423,9 @@ impl ArrowTarget for TargetController {
                     was_hit = true;
                     self.targets_hit += 1;
 
-                    audio.play(self.smash_sounds.random_sound()).unwrap();
+                    if let Some(audio) = &mut audio {
+                        audio.play(self.smash_sounds.random_sound()).unwrap();
+                    }
                 }
             }
         }

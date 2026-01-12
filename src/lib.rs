@@ -27,7 +27,7 @@ pub struct GameSystem {
     gpu: GPUContext,
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(skip))]
     pub surface: wgpu::Surface<'static>,
-    audio: kira::manager::AudioManager,
+    audio: Option<kira::manager::AudioManager>,
     game_state: GameState,
     camera: RailController,
     renderer: Box<DeferredRenderer>,
@@ -46,7 +46,10 @@ pub struct FrameResult {
 
 impl GameSystem {
     pub fn new(gpu: GPUContext, surface: wgpu::Surface<'static>, size: UVec2, assets: &impl AssetSource) -> Self {
-        let audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).unwrap();
+        #[cfg(not(target_arch = "wasm32"))]
+        let audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).ok();
+        #[cfg(target_arch = "wasm32")]
+        let audio = None;
 
         let init_time = Instant::now();
         let game_state = GameState::Title {started_at: init_time, is_restart: false };
@@ -94,12 +97,12 @@ impl GameSystem {
                 self.game_state = GameState::Finish { done_at: now + GameState::FINISH_DURATION };
             }
 
-            self.arrows.tick(time, &self.terrain, &mut self.audio, &mut [
+            self.arrows.tick(time, &self.terrain, self.audio.as_mut(), &mut [
                 &mut self.targets,
             ]);
             self.targets.tick(time);
         }
-        self.ui_disp.tick(&mut self.audio, self.game_state, now, &self.camera, &self.arrows, &self.targets);
+        self.ui_disp.tick(self.audio.as_mut(), self.game_state, now, &self.camera, &self.arrows, &self.targets);
 
         let out_view = output.create_view(&TextureViewDescriptor{
             format: Some(self.gpu.output_format),
@@ -160,9 +163,14 @@ impl GameSystem {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     // returns if the cursor should grab
     pub fn on_click(&mut self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        if let None = self.audio {
+            self.audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).ok();
+            web_sys::console::log_1(&"initialized audio".into());
+        }
         match self.game_state {
             GameState::Playing => {
-                self.arrows.shoot(&mut self.audio, &self.camera);
+                self.arrows.shoot(self.audio.as_mut(), &self.camera);
                 false
             },
             GameState::Title {..} => {
@@ -203,7 +211,7 @@ impl GameSystem {
 
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
     pub fn stop_music(&mut self) {
-        self.ui_disp.stop_music(&mut self.audio);
+        self.ui_disp.stop_music();
     }
 
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
