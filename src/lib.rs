@@ -1,4 +1,5 @@
-use std::time::Instant;
+use std::borrow::Borrow;
+use web_time::Instant;
 use kira::{manager::{backend::DefaultBackend, AudioManager, AudioManagerSettings}};
 use wgpu::{Surface, Texture};
 use glam::{UVec2, vec3};
@@ -21,7 +22,11 @@ pub mod ui;
 
 pub use gputil::GPUContext;
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct GameSystem {
+    gpu: GPUContext,
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen(skip))]
+    pub surface: wgpu::Surface<'static>,
     audio: kira::manager::AudioManager,
     game_state: GameState,
     camera: RailController,
@@ -33,12 +38,14 @@ pub struct GameSystem {
     ui_disp: UIDisplay,
 }
 
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
 pub struct FrameResult {
+    pub need_resize: bool,
     pub should_release_cursor: bool,
 }
 
 impl GameSystem {
-    pub fn new(gpu: &GPUContext, size: UVec2, assets: &impl AssetSource) -> Self {
+    pub fn new(gpu: GPUContext, surface: wgpu::Surface<'static>, size: UVec2, assets: &impl AssetSource) -> Self {
         let audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).unwrap();
 
         let init_time = Instant::now();
@@ -62,63 +69,13 @@ impl GameSystem {
         let ui_disp = UIDisplay::new(&gpu, assets, &renderer);
 
         GameSystem {
-            audio,
+            gpu, surface, audio,
             game_state, camera, renderer,
             terrain, terrain_view, arrows, targets, ui_disp
         }
     }
 
-    pub fn resize(&mut self, gpu: &GPUContext, surface: &Surface, new_size: UVec2) {
-        self.renderer.resize(&gpu, new_size);
-        gpu.configure_surface_target(&surface, new_size);
-    }
-
-    // returns if the cursor should grab
-    pub fn on_click(&mut self) -> bool {
-        match self.game_state {
-            GameState::Playing => {
-                self.arrows.shoot(&mut self.audio, &self.camera);
-                false
-            },
-            GameState::Title {..} => {
-                self.game_state = GameState::Fade { done_at: Instant::now() + GameState::FADE_DURATION };
-                true
-            }
-            GameState::Paused => {
-                self.camera.unpause(Instant::now());
-                self.game_state = GameState::Playing;
-                true
-            }
-            _ => {false}
-        }
-    }
-
-    pub fn on_cursor_ungrab(&mut self) {
-        match self.game_state {
-            GameState::Playing => {
-                self.game_state = GameState::Paused;
-            }
-            GameState::Countdown {..} | GameState::Fade {..} => {
-                self.game_state = GameState::Title {started_at: Instant::now(), is_restart: false};
-            }
-            _ => {}
-        }
-    }
-
-    pub fn on_mouse_move(&mut self, dx: f64, dy: f64) {
-        match self.game_state {
-            GameState::Playing | GameState::Countdown {..} => {
-                self.camera.mouse(dx, dy);
-            }
-            _ => {}
-        }
-    }
-
-    pub fn stop_music(&mut self) {
-        self.ui_disp.stop_music(&mut self.audio);
-    }
-
-    pub fn on_frame(&mut self, gpu: &GPUContext, output: &Texture) -> FrameResult {
+    pub fn tick_and_render(&mut self, output: &wgpu::Texture) -> bool {
         let mut should_release_cursor = false;
 
         let now = Instant::now();
@@ -145,20 +102,129 @@ impl GameSystem {
         self.ui_disp.tick(&mut self.audio, self.game_state, now, &self.camera, &self.arrows, &self.targets);
 
         let out_view = output.create_view(&Default::default());
-        self.renderer.render(&gpu, &out_view, &self.camera, &mut [
+        self.renderer.render(&self.gpu, &out_view, &self.camera, &mut [
             &mut self.terrain_view,
             &mut self.arrows,
             &mut self.targets,
             &mut self.ui_disp,
         ]);
 
-        FrameResult {should_release_cursor}
+        should_release_cursor
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+impl GameSystem {
+    pub async fn init_from_canvas(canvas: web_sys::HtmlCanvasElement, raw_asset_bundle: Box<[u8]>) -> Self {
+        use web_sys::console::{log_1, log_2};
+        use crate::gputil::asset::LoadedZipBundle;
+
+        let init_size = UVec2::new(canvas.width(), canvas.height());
+        log_1(&"got canvas size".into());
+
+        let wgpu_inst = wgpu::Instance::default();
+        let surface = wgpu_inst.create_surface(wgpu::SurfaceTarget::Canvas(canvas)).unwrap();
+        let gpu = GPUContext::with_limits(
+            wgpu_inst,
+            Some(&surface),
+            wgpu::Features::RG11B10UFLOAT_RENDERABLE | wgpu::Features::CLIP_DISTANCES,
+            Default::default(),
+        ).await;
+        log_1(&"initialized gpu".into());
+
+        gpu.configure_surface_target(&surface, init_size);
+        log_1(&"configured canvas".into());
+
+        let raw_asset_ref: &[u8] = raw_asset_bundle.borrow();
+        log_2(&"asset bundle size (wasm)".into(), &raw_asset_ref.len().into());
+        let assets = LoadedZipBundle::new(&raw_asset_ref).unwrap();
+        log_1(&"parsed asset bundle".into());
+
+        Self::new(gpu, surface, init_size, &assets)
+    }
+}
+
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+impl GameSystem {
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+    pub fn resize(&mut self, width: u32, height: u32) {
+        let new_size = UVec2::new(width, height);
+        self.renderer.resize(&self.gpu, new_size);
+        self.gpu.configure_surface_target(&self.surface, new_size);
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+    // returns if the cursor should grab
+    pub fn on_click(&mut self) -> bool {
+        match self.game_state {
+            GameState::Playing => {
+                self.arrows.shoot(&mut self.audio, &self.camera);
+                false
+            },
+            GameState::Title {..} => {
+                self.game_state = GameState::Fade { done_at: Instant::now() + GameState::FADE_DURATION };
+                true
+            }
+            GameState::Paused => {
+                self.camera.unpause(Instant::now());
+                self.game_state = GameState::Playing;
+                true
+            }
+            _ => {false}
+        }
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+    pub fn on_cursor_ungrab(&mut self) {
+        match self.game_state {
+            GameState::Playing => {
+                self.game_state = GameState::Paused;
+            }
+            GameState::Countdown {..} | GameState::Fade {..} => {
+                self.game_state = GameState::Title {started_at: Instant::now(), is_restart: false};
+            }
+            _ => {}
+        }
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+    pub fn on_mouse_move(&mut self, dx: f64, dy: f64) {
+        match self.game_state {
+            GameState::Playing | GameState::Countdown {..} => {
+                self.camera.mouse(dx, dy);
+            }
+            _ => {}
+        }
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+    pub fn stop_music(&mut self) {
+        self.ui_disp.stop_music(&mut self.audio);
+    }
+
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+    pub fn on_frame(&mut self,) -> FrameResult {
+        let surface_result = self.surface.get_current_texture();
+        let surface_tex = match surface_result {
+            Ok(t) => t,
+            Err(e) => {
+                log::error!("get_current_texture: {}", e);
+                return FrameResult {need_resize: true, should_release_cursor: false}
+            }
+        };
+
+        let should_release_cursor = self.tick_and_render(&surface_tex.texture);
+        surface_tex.present();
+
+        FrameResult {need_resize: false, should_release_cursor}
     }
 }
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
-pub fn run_web() -> Result<(), wasm_bindgen::JsValue> {
+pub fn init_web() -> Result<(), wasm_bindgen::JsValue> {
     console_error_panic_hook::set_once();
+    web_sys::console::log_1(&"Hello from wasm".into());
     Ok(())
 }

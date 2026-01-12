@@ -1,2 +1,5 @@
 /target
 /assets/staging
+/pkg
+/html/asset_bundle.zip
+/html/pkg

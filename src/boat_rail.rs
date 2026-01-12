@@ -1,5 +1,6 @@
 use glam::*;
-use std::{f32::consts::TAU, ops::{Add, Mul, Sub}, time::Instant};
+use std::{f32::consts::TAU, ops::{Add, Mul, Sub}};
+use web_time::Instant;
 
 use crate::{camera::{Camera, CameraController, ShadowSettings}, ui::GameState};
 

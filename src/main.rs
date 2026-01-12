@@ -1,11 +1,13 @@
 // disable windows console on release build
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::time::{Duration};
+use std::{sync::Arc, time::Duration};
 
 use bowfishing_blitz::{GameSystem, gputil::{asset::LocalAssetFolder, *}};
 
 use glam::*;
+
+#[cfg(not(target_arch = "wasm32"))]
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
     event_loop::EventLoop,
@@ -14,16 +16,18 @@ use winit::{
     window::{CursorGrabMode, Window}
 };
 
+
+#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Info).init();
     log::info!("starting up");
 
     let wgpu_inst = wgpu::Instance::default();
     let mut event_loop = EventLoop::new().unwrap();
-    let window = event_loop.create_window(
+    let window = Arc::new(event_loop.create_window(
             Window::default_attributes().with_title("Bowfishing Blitz").with_maximized(true)
-        ).unwrap();
-    let surface = wgpu_inst.create_surface(&window).unwrap();
+        ).unwrap());
+    let surface = wgpu_inst.create_surface(window.clone()).unwrap();
     
     let gpu = pollster::block_on(GPUContext::with_limits(
         wgpu_inst,
@@ -37,11 +41,11 @@ fn main() {
 
     let assets = LocalAssetFolder::new("./assets");
 
-    let mut game = GameSystem::new(&gpu, size, &assets);
+    let mut game = GameSystem::new(gpu, surface, size, &assets);
 
     let window = &window;
     'mainloop: loop{
-        let surface_result = surface.get_current_texture();
+        let surface_result = game.surface.get_current_texture();
         //log::info!("FRAME ------------------------------------------------------");
 
         let mut must_resize: Option<UVec2> = None;
@@ -108,7 +112,7 @@ fn main() {
         
         if let Some(new_size) = must_resize {
             drop(surface_result);
-            game.resize(&gpu, &surface, new_size);
+            game.resize(new_size.x, new_size.y);
             window.request_redraw();
             continue
         }
@@ -118,14 +122,14 @@ fn main() {
             Err(e) => {
                 log::error!("get_current_texture: {}", e);
                 size = window_size(&window);
-                game.resize(&gpu, &surface, size);
+                game.resize(size.x, size.y);
                 window.request_redraw();
                 continue
             }
         };
 
-        let frame_result = game.on_frame(&gpu, &surface_tex.texture);
-        if frame_result.should_release_cursor {
+        let should_release_cursor = game.tick_and_render(&surface_tex.texture);
+        if should_release_cursor {
             let _ = window.set_cursor_grab(CursorGrabMode::None);
             window.set_cursor_visible(true);
         }

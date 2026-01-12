@@ -132,7 +132,7 @@ impl TargetController {
 
         let colors = color_rail();
 
-        let seed = rng.gen();
+        let seed = rng.random();
         let mut i = 0;
         while targets.len() < num_targets {
             let rand = sobol_burley::sample_4d(i, 0, seed);
@@ -151,7 +151,7 @@ impl TargetController {
                         orientation: rot,
                         color_a: pack_h3(colors.sample(col_idx)),
                         color_b: pack_h3(colors.sample(col_idx + col_step).lerp(vec3(0.7, 0.7, 0.7), col_fac)),
-                        seed: rng.gen(),
+                        seed: rng.random(),
                     });
                 }
             }

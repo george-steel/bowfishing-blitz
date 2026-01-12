@@ -1,9 +1,10 @@
-use std::{default, io::Cursor, mem::size_of, sync::Arc, time::{Duration, Instant}, default::Default};
-use kira::{manager::AudioManager, sound::{static_sound::{StaticSoundData}, streaming::{StreamingSoundData, StreamingSoundHandle, StreamingSoundSettings}, FromFileError}, tween::{Easing, Tween}, Volume};
+use std::{default, io::Cursor, mem::size_of, sync::Arc, default::Default};
+use web_time::{Duration, Instant};
+use kira::{manager::AudioManager, sound::{SoundData, static_sound::{StaticSoundData}, FromFileError}, tween::{Easing, Tween}, Volume};
 use wgpu::{util::{BufferInitDescriptor, DeviceExt}, *};
 use glam::*;
 
-use crate::{arrows::ArrowController, audio_util::load_static_sound, boat_rail::RailController, deferred_renderer::{DeferredRenderer, RenderObject}, gputil::{load_png, AssetSource, GPUContext}, targets::TargetController};
+use crate::{arrows::ArrowController, audio_util::{MusicData, MusicHandle, load_music_data, load_static_sound}, boat_rail::RailController, deferred_renderer::{DeferredRenderer, RenderObject}, gputil::{AssetSource, GPUContext, load_png}, targets::TargetController};
 
 // state machine for title screen, pausing, and restart
 #[derive(Clone, Copy, Debug)]
@@ -86,8 +87,8 @@ pub struct UIDisplay {
     numbers_bg: BindGroup,
 
 
-    enc_music: Arc<[u8]>,
-    playing_music: Option<StreamingSoundHandle<FromFileError>>,
+    music: MusicData,
+    playing_music: Option<MusicHandle>,
     small_bell_sound: StaticSoundData,
     big_bell_sound: StaticSoundData,
     whistle_sound: StaticSoundData,
@@ -286,7 +287,7 @@ impl UIDisplay {
         });
 
 
-        let enc_music = Arc::from(assets.get_bytes("river_valley_breakdown.ogg".as_ref()).unwrap());
+        let music = load_music_data(assets, "river_valley_breakdown.ogg", -6.0).unwrap();
         let small_bell_sound = load_static_sound(assets, "small_bell.ogg", 0.0).unwrap();
         let big_bell_sound = load_static_sound(assets, "big_bell.ogg", 0.0).unwrap();
         let whistle_sound = load_static_sound(assets, "whistle.ogg", 0.0).unwrap();
@@ -296,7 +297,7 @@ impl UIDisplay {
             title_buf, states_buf, numbers_buf,
             title_bg, states_bg, numbers_bg,
             
-            enc_music, small_bell_sound, big_bell_sound, whistle_sound,
+            music, small_bell_sound, big_bell_sound, whistle_sound,
             playing_music: None,
 
             old_state: GameState::Title { started_at: Instant::now(), is_restart: false },
@@ -314,11 +315,7 @@ impl UIDisplay {
         // state transition audio
         match (self.old_state, new_state) {
             (GameState::Countdown {..}, GameState::Playing) => {
-                let sound_data = StreamingSoundData::from_cursor(
-                    Cursor::new(self.enc_music.clone()),
-                    StreamingSoundSettings::default().volume(Volume::Decibels(-6.0))
-                ).unwrap();
-                let sound_handle = audio.play(sound_data).unwrap();
+                let sound_handle = audio.play(self.music.clone()).unwrap();
                 self.playing_music = Some(sound_handle);
                 audio.play(self.big_bell_sound.clone());
                 audio.play(self.small_bell_sound.clone());

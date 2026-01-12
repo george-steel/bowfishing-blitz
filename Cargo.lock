@@ -249,6 +249,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "web-time",
  "wgpu",
  "winit",
 ]
@@ -1881,6 +1882,7 @@ dependencies = [
  "chrono",
  "crc32fast",
  "encoding_rs",
+ "miniz_oxide",
  "oem_cp",
  "oval",
  "ownable",

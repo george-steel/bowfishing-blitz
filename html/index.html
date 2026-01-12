@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<script type="module">
+import init, {GameSystem} from "./pkg/bowfishing_blitz.js";
+
+
+
+async function run() {
+    const bundle_promise = fetch("./asset_bundle.zip").then(r => r.arrayBuffer());
+    await init();
+    console.log("hello from javascript");
+    const bundle_buf = await bundle_promise;
+    console.log("loaded bundle", bundle_buf.byteLength);
+
+    let canvas = document.getElementById("canvas");
+
+    let bundle_view = new Uint8Array(bundle_buf);
+    let game = await GameSystem.init_from_canvas(canvas, bundle_view);
+    console.log("Game initialized");
+
+    game.on_frame();
+}
+if (navigator.gpu) {
+    run();
+} else {
+    document.body.innerHTML = "<h1>WebGPU Not Supported</h1><h2>Please use a browser such as Chrome or Firefox Nightly that supports WebGPU</h2>";
+}
+</script>
+
+</script>
+</head>
+<body>
+<canvas id="canvas" width="800" height="600" style="width: 100%; height: 100%;" >
+</body>
+</html>
