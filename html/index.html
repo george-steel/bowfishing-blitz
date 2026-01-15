@@ -109,6 +109,9 @@ async function run() {
         if (result.need_resize) {
             game.resize(width, height);
         }
+        if (result.should_release_cursor) {
+            document.exitPointerLock();
+        }
         requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);
