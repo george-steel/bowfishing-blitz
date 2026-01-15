@@ -228,7 +228,7 @@ impl TargetController {
                 &renderer.global_bind_layout,
                 &targets_bg_layout,
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         let shadow_targets_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("pots_pipeline_layout"),
@@ -236,7 +236,7 @@ impl TargetController {
                 &renderer.global_bind_layout,
                 &shadow_targets_bg_layout,
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let target_lathe_points = pot_model();
@@ -268,7 +268,7 @@ impl TargetController {
             },
             depth_stencil: reverse_z(),
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         };
         let targets_pipeline = gpu.device.create_render_pipeline(&targets_pipeline_desc);
@@ -292,7 +292,7 @@ impl TargetController {
             },
             depth_stencil: reverse_z(),
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         };
         let shadow_targets_pipeline = gpu.device.create_render_pipeline(&shadow_targets_pipeline_desc);
@@ -307,7 +307,7 @@ impl TargetController {
         let tex_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             min_filter: wgpu::FilterMode::Linear,
             mag_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             anisotropy_clamp: 4,
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::ClampToEdge,

@@ -162,17 +162,17 @@ impl TerrainView {
         let pipeline_layout = gpu.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
             label: Some("Terrain Pipeline Layout"),
             bind_group_layouts: &[&renderer.global_bind_layout, &bg_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         let shadow_pipeline_layout = gpu.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
             label: Some("Terrain Pipeline Layout"),
             bind_group_layouts: &[&renderer.global_bind_layout, &shadow_bg_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         let water_pipeline_layout = gpu.device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor{
             label: Some("Terrain Pipeline Layout"),
             bind_group_layouts: &[&renderer.global_bind_layout, &water_bg_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         let shader = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor{
             label: Some("terrain.wgsl"),
@@ -200,7 +200,7 @@ impl TerrainView {
             },
             depth_stencil: reverse_z(),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         };
         let terrain_pipeline = gpu.device.create_render_pipeline(&terrain_pipeline_desc);
@@ -224,7 +224,7 @@ impl TerrainView {
             },
             depth_stencil: reverse_z(),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         };
         let shadow_terrain_pipeline = gpu.device.create_render_pipeline(&shadow_terrain_pipeline_desc);
@@ -251,7 +251,7 @@ impl TerrainView {
             },
             depth_stencil: reverse_z(),
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -281,7 +281,7 @@ impl TerrainView {
         let tex_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             min_filter: wgpu::FilterMode::Linear,
             mag_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             ..wgpu::SamplerDescriptor::default()

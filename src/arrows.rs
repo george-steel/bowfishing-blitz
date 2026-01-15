@@ -181,7 +181,7 @@ impl ArrowController {
                 &renderer.global_bind_layout,
                 &arrows_bg_layout,
             ],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let arrows_above_pipeline_desc = RenderPipelineDescriptor {
@@ -206,7 +206,7 @@ impl ArrowController {
             },
             depth_stencil: reverse_z(),
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         };
 
@@ -231,7 +231,7 @@ impl ArrowController {
             },
             depth_stencil: reverse_z(),
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         };
         let shadow_arrows_pipeline = gpu.device.create_render_pipeline(&shadow_arrows_pipeline_desc);
@@ -258,7 +258,7 @@ impl ArrowController {
         let splish_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("splish_pipeline_layout"),
             bind_group_layouts: &[&renderer.global_bind_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
         // decal pipeline
         let splish_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -305,7 +305,7 @@ impl ArrowController {
                 },
             }),
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 

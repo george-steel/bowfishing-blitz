@@ -36,6 +36,7 @@ impl GPUContext {
             label: None,
             required_features: features,
             required_limits: limits,
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
             memory_hints: wgpu::MemoryHints::Performance,
             trace: wgpu::Trace::Off,
         })

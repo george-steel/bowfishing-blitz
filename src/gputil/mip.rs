@@ -79,7 +79,7 @@ impl MipMaker {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         });
         let bg_layout = mip_pipeline.get_bind_group_layout(0);
@@ -91,7 +91,7 @@ impl MipMaker {
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -145,8 +145,7 @@ impl MipMaker {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..wgpu::RenderPassDescriptor::default()
             });
 
             rpass.set_pipeline(&mip_pipeline);

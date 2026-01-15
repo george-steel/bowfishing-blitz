@@ -53,7 +53,7 @@ impl DFGBaker {
         let pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
             label: Some("integral_layout"),
             bind_group_layouts: &[],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
 
         let dfg_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -77,7 +77,7 @@ impl DFGBaker {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         });
 
@@ -102,7 +102,7 @@ impl DFGBaker {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         });
 
@@ -164,7 +164,7 @@ impl DFGBaker {
             address_mode_v: AddressMode::ClampToEdge,
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
-            mipmap_filter: FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -195,8 +195,7 @@ impl DFGBaker {
                     }),
                 ],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..wgpu::RenderPassDescriptor::default()
             });
             
             rpass.set_pipeline(&self.dfg_pipeline);
@@ -254,8 +253,7 @@ impl DFGBaker {
                     }),
                 ],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..wgpu::RenderPassDescriptor::default()
             });
             
             rpass.set_pipeline(&self.dirs_pipeline);
@@ -332,7 +330,7 @@ impl DFGBaker {
             tx3.send(result).unwrap();
         });
         
-        gpu.device.poll(wgpu::PollType::Wait);
+        gpu.device.poll(wgpu::PollType::wait_indefinitely());
         rx.recv().unwrap().unwrap();
         rx.recv().unwrap().unwrap();
         rx.recv().unwrap().unwrap();

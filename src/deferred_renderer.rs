@@ -538,7 +538,7 @@ impl DeferredRenderer {
         let cube_bilinear_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             min_filter: wgpu::FilterMode::Linear,
             mag_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             address_mode_u: wgpu::AddressMode::MirrorRepeat,
             address_mode_v: wgpu::AddressMode::MirrorRepeat,
             ..wgpu::SamplerDescriptor::default()
@@ -546,7 +546,7 @@ impl DeferredRenderer {
         let cube_trilinear_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             min_filter: wgpu::FilterMode::Linear,
             mag_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             address_mode_u: wgpu::AddressMode::MirrorRepeat,
             address_mode_v: wgpu::AddressMode::MirrorRepeat,
             ..wgpu::SamplerDescriptor::default()
@@ -592,7 +592,7 @@ impl DeferredRenderer {
                 &gbuffer_bind_layout,
                 &lighting_bind_group_layout,
             ],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
 
         let lighting_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -616,7 +616,7 @@ impl DeferredRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         });
 
@@ -627,7 +627,7 @@ impl DeferredRenderer {
                 &water_gbuffer_bind_layout,
                 &lighting_bind_group_layout,
             ],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
 
         let underwater_lighting_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -651,7 +651,7 @@ impl DeferredRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -676,7 +676,7 @@ impl DeferredRenderer {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -770,8 +770,7 @@ impl DeferredRenderer {
                     depth_ops: Some(Operations {load: LoadOp::Clear(0.0), store: StoreOp::Store}),
                     stencil_ops: None
                 }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..RenderPassDescriptor::default()
             });
 
             shadow_pass.set_bind_group(0, &self.global_bind_group, &[]);
@@ -820,8 +819,7 @@ impl DeferredRenderer {
                     depth_ops: Some(Operations{load: LoadOp::Clear(0.0), store: StoreOp::Store}),
                     stencil_ops: None,
                 }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..RenderPassDescriptor::default()
             });
 
             underwater_pass.set_bind_group(0, &self.global_bind_group, &[]);
@@ -840,8 +838,7 @@ impl DeferredRenderer {
                     ops: ZERO_COLOR,
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..RenderPassDescriptor::default()
             });
 
             underwater_lighting_pass.set_pipeline(&self.underwater_lighting_pipeline);
@@ -890,8 +887,7 @@ impl DeferredRenderer {
                     depth_ops: Some(Operations{load: LoadOp::Clear(0.0), store: StoreOp::Store}),
                     stencil_ops: None,
                 }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..RenderPassDescriptor::default()
             });
 
             reflected_pass.set_bind_group(0, &self.global_bind_group, &[]);
@@ -910,8 +906,7 @@ impl DeferredRenderer {
                     ops: ZERO_COLOR,
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..RenderPassDescriptor::default()
             });
 
             reflected_lighting_pass.set_pipeline(&self.reflected_lighting_pipeline);
@@ -962,8 +957,7 @@ impl DeferredRenderer {
                     depth_ops: Some(Operations{load: LoadOp::Clear(0.0), store: StoreOp::Store}),
                     stencil_ops: None,
                 }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..RenderPassDescriptor::default()
             });
 
             opaque_pass.set_bind_group(0, &self.global_bind_group, &[]);
@@ -982,8 +976,7 @@ impl DeferredRenderer {
                     ops: ZERO_COLOR,
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..RenderPassDescriptor::default()
             });
 
             lighting_pass.set_pipeline(&self.lighting_pipeline);

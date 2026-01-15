@@ -34,7 +34,7 @@ impl FragDisplay {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         });
 
@@ -61,8 +61,7 @@ impl FragDisplay {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..wgpu::RenderPassDescriptor::default()
             });
             
             rpass.set_pipeline(&self.map_pipeline);
@@ -93,7 +92,7 @@ impl FragDisplay {
             },
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         });
 
@@ -144,8 +143,7 @@ impl FragDisplay {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..wgpu::RenderPassDescriptor::default()
             });
             
             rpass.set_pipeline(&height_pipeline);
@@ -180,7 +178,7 @@ impl FragDisplay {
             tx.send(result).unwrap();
         });
 
-        gpu.device.poll(wgpu::PollType::Wait);
+        gpu.device.poll(wgpu::PollType::wait_indefinitely());
         rx.recv().unwrap().unwrap();
 
         log::info!("mapped height buffer");

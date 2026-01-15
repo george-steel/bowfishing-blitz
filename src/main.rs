@@ -1,5 +1,6 @@
 // disable windows console on release build
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![cfg(not(target_arch = "wasm32"))]
 
 use std::{sync::Arc, time::Duration};
 
@@ -7,7 +8,6 @@ use bowfishing_blitz::{GameSystem, gputil::{asset::LocalAssetFolder, *}};
 
 use glam::*;
 
-#[cfg(not(target_arch = "wasm32"))]
 use winit::{
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
     event_loop::EventLoop,
@@ -17,7 +17,6 @@ use winit::{
 };
 
 
-#[cfg(not(target_arch = "wasm32"))]
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Info).init();
     log::info!("starting up");

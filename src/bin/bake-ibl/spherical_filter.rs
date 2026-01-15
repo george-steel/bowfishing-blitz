@@ -77,7 +77,7 @@ impl IBLFilter {
         let disp_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
             label: Some("disp_layout"),
             bind_group_layouts: &[&disp_bg_layout],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
         let disp_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
             label: None,
@@ -100,7 +100,7 @@ impl IBLFilter {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         });
 
@@ -109,14 +109,14 @@ impl IBLFilter {
             address_mode_v: AddressMode::MirrorRepeat,
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
-            mipmap_filter: FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
         let cube_sampler = gpu.device.create_sampler(&SamplerDescriptor {
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
-            mipmap_filter: FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             anisotropy_clamp: 8,
             ..Default::default()
         });
@@ -141,7 +141,7 @@ impl IBLFilter {
         let spectrum_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
             label: Some("spectrum_layout"),
             bind_group_layouts: &[&spectrum_bg_layout],
-            push_constant_ranges: &[]
+            immediate_size: 0,
         });
         let spectrum_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
             label: Some("spectrum_pipeline"),
@@ -186,7 +186,7 @@ impl IBLFilter {
         let fht1_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
             label: Some("fht1_layout"),
             bind_group_layouts: &[&fht1_bg_layout],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
         let fht1_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
             label: Some("fht1_pipeline"),
@@ -225,7 +225,7 @@ impl IBLFilter {
         let fht2_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
             label: Some("fht2_layout"),
             bind_group_layouts: &[&fht2_bg_layout],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
         let fht2_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
             label: Some("fht2_pipeline"),
@@ -274,7 +274,7 @@ impl IBLFilter {
         let blur_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
             label: Some("blur_layout"),
             bind_group_layouts: &[&blur_bg_layout],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
         let blur_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
             label: Some("blur_pipeline"),
@@ -319,7 +319,7 @@ impl IBLFilter {
         let cubify_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
             label: Some("cubify_layout"),
             bind_group_layouts: &[&cubify_bg_layout],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
         let cubify_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
             label: Some("cubify_pipeline"),
@@ -358,7 +358,7 @@ impl IBLFilter {
         let pack_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
             label: Some("pack_layout"),
             bind_group_layouts: &[&pack_bg_layout],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
         let pack_pipeline = gpu.device.create_compute_pipeline(&ComputePipelineDescriptor{
             label: Some("pack_pipeline"),
@@ -427,8 +427,7 @@ impl IBLFilter {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..wgpu::RenderPassDescriptor::default()
             });
 
             
@@ -728,7 +727,7 @@ impl IBLFilter {
             tx2.send(result).unwrap();
         });
 
-        gpu.device.poll(wgpu::PollType::Wait).unwrap();
+        gpu.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
         rx.recv().unwrap().unwrap();
         rx.recv().unwrap().unwrap();
         log::info!("mapping complete");
@@ -840,7 +839,7 @@ impl IBLFilter {
         cube_slice.map_async(wgpu::MapMode::Read, move |result| {
             tx.send(result).unwrap();
         });
-        gpu.device.poll(wgpu::PollType::Wait).unwrap();
+        gpu.device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
         rx.recv().unwrap().unwrap();
         log::info!("mapping complete");
 

@@ -98,7 +98,7 @@ impl WaterFilter {
         let water_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
             label: Some("water_layout"),
             bind_group_layouts: &[&water_bg_layout],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
 
         let clamp_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -125,7 +125,7 @@ impl WaterFilter {
         let clamp_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor{
             label: Some("water_layout"),
             bind_group_layouts: &[&clamp_bg_layout],
-            push_constant_ranges: &[]
+            immediate_size: 0
         });
 
         let above_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -149,7 +149,7 @@ impl WaterFilter {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         });
 
@@ -174,7 +174,7 @@ impl WaterFilter {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         });
 
@@ -199,7 +199,7 @@ impl WaterFilter {
             },
             depth_stencil: None,
             multisample: MultisampleState::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None
         });
 
@@ -208,7 +208,7 @@ impl WaterFilter {
             address_mode_v: AddressMode::MirrorRepeat,
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
-            mipmap_filter: FilterMode::Linear,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
 
@@ -282,8 +282,7 @@ impl WaterFilter {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..wgpu::RenderPassDescriptor::default()
             });
             
             rpass.set_pipeline(&self.above_pipeline);
@@ -358,8 +357,7 @@ impl WaterFilter {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..wgpu::RenderPassDescriptor::default()
             });
             
             rpass.set_pipeline(&self.below_pipeline);
@@ -414,8 +412,7 @@ impl WaterFilter {
                     },
                 })],
                 depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
+                ..wgpu::RenderPassDescriptor::default()
             });
             
             rpass.set_pipeline(&self.clamp_pipeline);

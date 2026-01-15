@@ -117,7 +117,7 @@ impl UIDisplay {
             address_mode_v: AddressMode::ClampToEdge,
             mag_filter: FilterMode::Linear,
             min_filter: FilterMode::Linear,
-            mipmap_filter: FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             ..Default::default()
         });
 
@@ -147,7 +147,7 @@ impl UIDisplay {
         let text_pipeline_layout = gpu.device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("text_pipeline_layout"),
             bind_group_layouts: &[&renderer.global_bind_layout, &text_bg_layout],
-            push_constant_ranges: &[],
+            immediate_size: 0,
         });
 
         let text_pipeline = gpu.device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -177,7 +177,7 @@ impl UIDisplay {
             }),
             depth_stencil: None,
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
@@ -208,7 +208,7 @@ impl UIDisplay {
             }),
             depth_stencil: None,
             multisample: Default::default(),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
 
