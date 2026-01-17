@@ -1,3 +1,10 @@
+#if CAN_CLIP
+enable clip_distances;
+#endif
+
+#include global.wgsl
+#include noise.wgsl
+
 const ls1mat = mat2x2f(0.2, 0.1, -0.1, 0.2);
 const ls2mat = mat2x2f(0.5, -0.5, 0.5, 0.5);
 const oct = mat2x2f(2.159, 0.978, -0.978, 2.159);
@@ -16,7 +23,9 @@ struct TerrainParams {
 }
 
 struct TerrainVertexOut {
-    @builtin(clip_distances) clip: array<f32, 1>,
+    #if CAN_CLIP
+        @builtin(clip_distances) clip: array<f32, 1>,
+    #endif
     @builtin(position) clip_pos: vec4f,
     @location(0) world_pos: vec3f,
     @location(1) uv: vec2f,
@@ -43,7 +52,9 @@ struct TerrainFragIn {
     let world_pos = vec3f(xy, z);
 
     var out: TerrainVertexOut;
-    out.clip[0] = clip_dist(world_pos);
+    #if CAN_CLIP
+        out.clip[0] = clip_dist(world_pos);
+    #endif
     out.clip_pos = clip_point(world_pos);
     out.world_pos = world_pos.xyz;
     out.uv = uv;
@@ -123,6 +134,10 @@ fn terrain_tex(xy: vec2f, z: f32, norm: vec3f) -> SolidParams {
 }
 
 @fragment fn terrain_frag(v: TerrainFragIn) -> GBufferPoint {
+    #if !CAN_CLIP
+        guard_frag(v.world_pos.z);
+    #endif
+
     let grad = terrain_grad(v.uv);
     let norm = normalize(vec3f(-grad, 1));
     let tan_x = normalize(vec3f(1, 0, grad.x));

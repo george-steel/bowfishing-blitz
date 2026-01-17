@@ -163,10 +163,7 @@ impl TargetController {
     pub fn new(gpu: &GPUContext, assets: &impl AssetSource, renderer: &DeferredRenderer, terrain: &HeightmapTerrain) -> Self {
         let all_targets = Self::gen_targets(NUM_TARGETS, terrain, 40.0);
 
-        let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
-            label: Some("pots.wgsl"),
-            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(crate::shaders::TARGETS)),
-        });
+        let shaders = gpu.process_shader_module("pots.wgsl", crate::shaders::TARGETS);
 
         let targets_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("pots_bg_layout"),

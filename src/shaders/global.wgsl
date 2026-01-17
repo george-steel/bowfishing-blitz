@@ -1,5 +1,3 @@
-enable clip_distances;
-
 const PI  = 3.1415926535;
 const TAU = 6.2831853072;
 
@@ -119,20 +117,20 @@ fn clip_dist(world_pos: vec3f) -> f32 {
     }
 }
 
-fn guard_frag(world_pos: vec3f) {
+fn guard_frag(z: f32) {
     switch PATH_ID {
         case PATH_DIRECT{
-            if world_pos.z < -0.05 {
+            if z < -0.05 {
                 discard;
             }
         }
         case PATH_REFLECT {
-            if world_pos.z < -0.1 {
+            if z < -0.1 {
                 discard;
             }
         }
         case PATH_REFRACT {
-            if world_pos.z > 0.05 {
+            if z > 0.05 {
                 discard;
             }
         }

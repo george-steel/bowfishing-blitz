@@ -220,10 +220,7 @@ pub struct DeferredRenderer {
 
 impl DeferredRenderer {
     pub fn new(gpu: &GPUContext, assets: &impl AssetSource, camera_ctrl: &impl CameraController, output_size: UVec2) -> Box<Self> {
-        let lighting_shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
-            label: Some("lighting.wgsl"),
-            source: ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::LIGHTING)),
-        });
+        let lighting_shaders = gpu.process_shader_module("lighting.wgsl", crate::shaders::LIGHTING);
 
         let gbuffers = DeferredRendererTextures::create(gpu, output_size);
 

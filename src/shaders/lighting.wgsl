@@ -1,3 +1,4 @@
+#include global.wgsl
 
 @vertex fn fullscreen_tri(@builtin(vertex_index) idx: u32) -> @builtin(position) vec4f {
     let u = f32(idx % 2);

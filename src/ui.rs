@@ -121,10 +121,7 @@ impl UIDisplay {
             ..Default::default()
         });
 
-        let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
-            label: Some("ui.wgsl"),
-            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(crate::shaders::UI)),
-        });
+        let shaders = gpu.process_shader_module("ui.wgsl", crate::shaders::UI);
 
         let text_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("text_bg_layout"),

@@ -174,10 +174,9 @@ impl TerrainView {
             bind_group_layouts: &[&renderer.global_bind_layout, &water_bg_layout],
             immediate_size: 0,
         });
-        let shader = gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor{
-            label: Some("terrain.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(crate::shaders::TERRAIN)),
-        });
+        
+        let shader = gpu.process_shader_module("terrain.wgsl", crate::shaders::TERRAIN);
+
         let terrain_pipeline_desc = wgpu::RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),

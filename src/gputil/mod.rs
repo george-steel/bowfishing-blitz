@@ -2,7 +2,7 @@ use std::{borrow::Cow, fs::File, io::{BufRead, BufReader, Read}, mem::size_of, p
 
 use image::{ImageDecoder, ImageError, ImageResult};
 use rgbe::{RGB9E5, RGBE8};
-use wgpu::{BindGroupLayoutEntry, TextureFormat};
+use wgpu::{BindGroupLayoutEntry, ShaderModuleDescriptor, TextureFormat};
 use winit::{dpi::PhysicalSize, window::Window};
 use bytemuck::{Pod, Zeroable};
 use glam::*;
@@ -11,6 +11,8 @@ pub mod mip;
 pub mod asset;
 pub use asset::AssetSource;
 
+use crate::shaders;
+
 pub struct GPUContext {
     pub instance: wgpu::Instance,
     pub adapter: wgpu::Adapter,
@@ -18,12 +20,13 @@ pub struct GPUContext {
     pub queue: wgpu::Queue,
     pub output_format: wgpu::TextureFormat,
     pub output_raw_format: wgpu::TextureFormat,
-    pub mip_maker: mip::MipMaker
+    pub mip_maker: mip::MipMaker,
+    can_clip: bool,
 }
 
 
 impl GPUContext {
-    pub async fn with_limits(instance: wgpu::Instance, for_surface: Option<&wgpu::Surface<'_>>, features: wgpu::Features, limits: wgpu::Limits) -> Self {
+    pub async fn with_limits(instance: wgpu::Instance, for_surface: Option<&wgpu::Surface<'_>>, mut features: wgpu::Features, limits: wgpu::Limits) -> Self {
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions{
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: for_surface,
@@ -32,6 +35,10 @@ impl GPUContext {
         .await
         .expect("Failed to find an appropriate adapter");
 
+        let can_clip = adapter.features().contains(wgpu::Features::CLIP_DISTANCES);
+        if can_clip {
+            features.insert(wgpu::Features::CLIP_DISTANCES);
+        }
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             label: None,
             required_features: features,
@@ -62,7 +69,7 @@ impl GPUContext {
         let mip_maker = mip::MipMaker::new(&device);
 
         GPUContext {
-            instance, adapter, device, queue, output_format, output_raw_format, mip_maker
+            instance, adapter, device, queue, output_format, output_raw_format, mip_maker, can_clip,
         }
     }
 
@@ -227,6 +234,24 @@ impl GPUContext {
 
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         (tex, view)
+    }
+
+    pub fn process_shader_module(&self, name: &str, body: &str) -> wgpu::ShaderModule {
+        let mut ctx = nanopre::Context::with_includes(|wanted: &str| -> Result<&'static [u8], ()> {
+            for (path, contents) in shaders::INCLUDES {
+                if wanted == *path {
+                    return Ok(contents.as_bytes())
+                }
+            }
+            Err(())
+        });
+
+        ctx.define("CAN_CLIP", if self.can_clip {"1"} else {"0"});
+        let shader = nanopre::process_str(body, &mut ctx).unwrap();
+        //log::info!("processed shader:\n{}", shader);
+        self.device.create_shader_module(ShaderModuleDescriptor {
+            label: Some(name), source: wgpu::ShaderSource::Wgsl(Cow::Owned(shader))
+        })
     }
 }
 

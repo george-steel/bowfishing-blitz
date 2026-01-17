@@ -244,6 +244,7 @@ dependencies = [
  "image",
  "kira",
  "log",
+ "nanopre",
  "pollster",
  "rand",
  "rc-zip-sync",
@@ -1257,6 +1258,12 @@ dependencies = [
  "thiserror 2.0.17",
  "unicode-ident",
 ]
+
+[[package]]
+name = "nanopre"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f952d36d3fad4a655ee000cc0078df3d4040fd401b744e7b4389063a4924443f"
 
 [[package]]
 name = "ndk"

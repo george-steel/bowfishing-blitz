@@ -1,3 +1,10 @@
+#if CAN_CLIP
+enable clip_distances;
+#endif
+
+#include global.wgsl
+#include noise.wgsl
+
 struct PotInst {
     // must preserve angles
     base_point: vec3f,
@@ -19,7 +26,9 @@ struct LathePoint {
 @group(1) @binding(1) var<uniform> pot_model: array<LathePoint, 12>;
 
 struct PotVSOut {
-    @builtin(clip_distances) clip: array<f32, 1>,
+    #if CAN_CLIP
+        @builtin(clip_distances) clip: array<f32, 1>,
+    #endif
     @builtin(position) clip_pos: vec4f,
     @location(0) world_pos: vec3f,
     @location(1) uv: vec2f,
@@ -106,7 +115,9 @@ var<private> QUAD_V: array<u32, 6> = array(0, 1, 0, 0, 1, 1);
     let color_b = unpack2x16float(pot.colors_packed.z);
     
     var out: PotVSOut;
-    out.clip[0] = clip_dist(world_pos);
+    #if CAN_CLIP
+        out.clip[0] = clip_dist(world_pos);
+    #endif
     out.clip_pos = clip_point(world_pos);
     out.world_pos = world_pos;
     out.uv = vec2f(u, point.v);
@@ -173,6 +184,10 @@ var<private> QUAD_V: array<u32, 6> = array(0, 1, 0, 0, 1, 1);
 @group(1) @binding(4) var pot_nr_tex: texture_2d<f32>;
 
 @fragment fn pot_frag(v: PotFragIn, @builtin(front_facing) is_forward: bool) -> GBufferPoint {
+    #if !CAN_CLIP
+        guard_frag(v.world_pos.z);
+    #endif
+    
     let back_corr = select(-1.0, 1.0, is_forward);
     let norm = normalize(v.world_norm) * back_corr;
     let tan = normalize(v.world_tan);

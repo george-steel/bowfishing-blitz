@@ -1,3 +1,5 @@
+#include global.wgsl
+
 struct SDFTextParams {
     viewport_loc: vec2f,
     size_vh: vec2f,

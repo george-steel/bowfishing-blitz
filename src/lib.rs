@@ -134,7 +134,7 @@ impl GameSystem {
         let gpu = GPUContext::with_limits(
             wgpu_inst,
             Some(&surface),
-            wgpu::Features::RG11B10UFLOAT_RENDERABLE | wgpu::Features::CLIP_DISTANCES,
+            wgpu::Features::RG11B10UFLOAT_RENDERABLE,
             Default::default(),
         ).await;
         log_1(&"initialized gpu".into());

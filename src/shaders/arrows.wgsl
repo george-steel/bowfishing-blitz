@@ -1,3 +1,9 @@
+#if CAN_CLIP
+enable clip_distances;
+#endif
+
+#include global.wgsl
+
 struct Arrow {
     end_pos: vec3f,
     state: u32,
@@ -14,7 +20,9 @@ struct ArrowVSIn {
 }
 
 struct ArrowVSOut {
-    @builtin(clip_distances) clip: array<f32, 1>,
+    #if CAN_CLIP
+        @builtin(clip_distances) clip: array<f32, 1>,
+    #endif
     @builtin(position) clip_pos: vec4f,
     @location(0) world_pos: vec3f,
     @location(1) world_norm: vec3f,
@@ -41,7 +49,9 @@ struct ArrowFragIn {
     let world_norm = norm_mat * vert.norm;
 
     var out: ArrowVSOut;
-    out.clip[0] = clip_dist(world_pos);
+    #if CAN_CLIP
+        out.clip[0] = clip_dist(world_pos);
+    #endif
     out.clip_pos = clip_point(world_pos);
     out.world_pos = world_pos;
     out.world_norm = world_norm;
@@ -64,6 +74,10 @@ struct ArrowFragIn {
 }
 
 @fragment fn arrow_frag(v: ArrowFragIn, @builtin(front_facing) is_forward: bool) -> GBufferPoint {
+    #if !CAN_CLIP
+        guard_frag(v.world_pos.z);
+    #endif
+
     let norm = normalize(v.world_norm) * select(-1.0, 1.0, is_forward);
 
     var albedo: vec4f;

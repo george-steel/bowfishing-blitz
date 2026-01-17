@@ -144,10 +144,7 @@ pub struct ArrowController {
 
 impl ArrowController {
     pub fn new(gpu: &GPUContext, assets: &impl AssetSource, renderer: &DeferredRenderer) -> Self {
-        let shaders = gpu.device.create_shader_module(ShaderModuleDescriptor{
-            label: Some("arrows.wgsl"),
-            source: ShaderSource::Wgsl(std::borrow::Cow::Borrowed(crate::shaders::ARROWS)),
-        });
+        let shaders = gpu.process_shader_module("arrows.wgsl", crate::shaders::ARROWS);
 
         let arrows_bg_layout = gpu.device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("arrows_bg_layout"),
