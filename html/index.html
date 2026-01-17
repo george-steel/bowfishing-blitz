@@ -49,6 +49,7 @@ async function run() {
             const canvas = entry.target;
             canvas.width = Math.max(1, Math.min(width, 4096));
             canvas.height = Math.max(1, Math.min(height, 4096));
+            console.log("resizing canvas", width, height);
             game.resize(width, height); // resize the gbuffers
         }
     });
@@ -97,6 +98,8 @@ async function run() {
     let frame_count = 0;
     let old_frame_time = performance.now();
 
+    console.log("registered events")
+
     function frame() {
         if (++frame_count >= 600) {
             const new_time = performance.now();
@@ -107,6 +110,7 @@ async function run() {
         }
         const result = game.on_frame();
         if (result.need_resize) {
+            console.log("need resize");
             game.resize(width, height);
         }
         if (result.should_release_cursor) {

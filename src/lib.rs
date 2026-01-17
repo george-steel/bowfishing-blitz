@@ -123,11 +123,10 @@ impl GameSystem {
 #[wasm_bindgen]
 impl GameSystem {
     pub async fn init_from_canvas(canvas: web_sys::HtmlCanvasElement, raw_asset_bundle: Box<[u8]>) -> Self {
-        use web_sys::console::{log_1, log_2};
         use crate::gputil::asset::LoadedZipBundle;
 
         let init_size = UVec2::new(canvas.width(), canvas.height());
-        log_1(&"got canvas size".into());
+        log::info!("got canvas size");
 
         let wgpu_inst = wgpu::Instance::default();
         let surface = wgpu_inst.create_surface(wgpu::SurfaceTarget::Canvas(canvas)).unwrap();
@@ -137,15 +136,15 @@ impl GameSystem {
             wgpu::Features::RG11B10UFLOAT_RENDERABLE,
             Default::default(),
         ).await;
-        log_1(&"initialized gpu".into());
+        log::info!("initialized gpu");
 
         gpu.configure_surface_target(&surface, init_size);
-        log_1(&"configured canvas".into());
+        log::info!("configured canvas");
 
         let raw_asset_ref: &[u8] = raw_asset_bundle.borrow();
-        log_2(&"asset bundle size (wasm)".into(), &raw_asset_ref.len().into());
+        log::info!("asset bundle size (wasm): {}", &raw_asset_ref.len());
         let assets = LoadedZipBundle::new(&raw_asset_ref).unwrap();
-        log_1(&"parsed asset bundle".into());
+        log::info!("parsed asset bundle");
 
         Self::new(gpu, surface, init_size, &assets)
     }
@@ -166,7 +165,7 @@ impl GameSystem {
         #[cfg(target_arch = "wasm32")]
         if let None = self.audio {
             self.audio = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default()).ok();
-            web_sys::console::log_1(&"initialized audio".into());
+            log::info!("initialized audio");
         }
         match self.game_state {
             GameState::Playing => {
@@ -236,6 +235,7 @@ impl GameSystem {
 #[wasm_bindgen(start)]
 pub fn init_web() -> Result<(), wasm_bindgen::JsValue> {
     console_error_panic_hook::set_once();
-    web_sys::console::log_1(&"Hello from wasm".into());
+    console_log::init_with_level(log::Level::Debug);
+    log::info!("Hello from wasm");
     Ok(())
 }
